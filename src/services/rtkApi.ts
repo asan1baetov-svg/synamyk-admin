@@ -57,7 +57,10 @@ export const rtkApi = createApi({
         const params = new URLSearchParams()
         if (active !== undefined) params.append('active', active.toString())
         if (role) params.append('role', role)
-        return `/users/export?${params}`
+        return {
+          url: `/users/export?${params}`,
+          responseHandler: async (response) => await response.blob(),
+        }
       },
     }),
 

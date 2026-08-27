@@ -7,7 +7,8 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { UserAvatar } from '@/components/shared/UserAvatar'
 import { Select } from '@/components/ui/Select'
 import { ExportButton } from '@/components/shared/ExportButton'
-import { useListUsersQuery, useDeleteUserMutation, useExportUsersQuery } from '@/services/rtkApi'
+import { EditUserModal, ConfirmDeleteModal } from '@/components/modals/UserDialogs'
+import { useListUsersQuery, useDeleteUserMutation, useUpdateUserMutation } from '@/services/rtkApi'
 import type { User } from '@/services/api'
 
 const roleOptions = [
@@ -26,7 +27,13 @@ export function Users() {
   const [page, setPage] = useState(0)
   const [selectedRole, setSelectedRole] = useState('')
   const [selectedStatus, setSelectedStatus] = useState('')
-  const [deleteUser] = useDeleteUserMutation()
+  const [deleteUser, { isLoading: isDeleting }] = useDeleteUserMutation()
+  const [updateUser, { isLoading: isUpdating }] = useUpdateUserMutation()
+
+  const [editOpen, setEditOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
+  const [selectedUser, setSelectedUser] = useState<User | null>(null)
 
   const active = selectedStatus ? selectedStatus === 'true' : undefined
   const { data, isLoading, error } = useListUsersQuery({
@@ -35,21 +42,63 @@ export function Users() {
     active,
     role: selectedRole || undefined,
   })
-  const { data: exportData } = useExportUsersQuery({ active, role: selectedRole || undefined })
 
-  const handleExport = () => {
-    if (exportData instanceof Blob) {
-      const url = window.URL.createObjectURL(exportData)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'users.csv'
-      a.click()
+  const handleExport = async () => {
+    try {
+      const params = new URLSearchParams()
+      if (active !== undefined) params.append('active', active.toString())
+      if (selectedRole) params.append('role', selectedRole)
+
+      const response = await fetch(
+        `https://synamyk-production.up.railway.app/api/admin/users/export?${params}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Accept': 'text/csv, application/octet-stream',
+          },
+        }
+      )
+      if (!response.ok) throw new Error('Export failed')
+
+      const blob = new Blob([await response.text()], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      const url = URL.createObjectURL(blob)
+      link.setAttribute('href', url)
+      link.setAttribute('download', `users-${new Date().toISOString().split('T')[0]}.csv`)
+      link.style.visibility = 'hidden'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (err) {
+      console.error('Export failed:', err)
     }
   }
 
-  const handleDelete = async (id: number) => {
+  const handleEditClick = (user: User) => {
+    setSelectedUser(user)
+    setEditOpen(true)
+  }
+
+  const handleEdit = async (id: number, formData: Partial<User>) => {
     try {
-      await deleteUser(id).unwrap()
+      await updateUser({ id, data: formData }).unwrap()
+      setEditOpen(false)
+    } catch (err) {
+      console.error('Failed to update user:', err)
+    }
+  }
+
+  const handleDeleteClick = (id: number) => {
+    setSelectedUserId(id)
+    setDeleteOpen(true)
+  }
+
+  const handleDelete = async () => {
+    if (!selectedUserId) return
+    try {
+      await deleteUser(selectedUserId).unwrap()
+      setDeleteOpen(false)
+      setSelectedUserId(null)
     } catch (err) {
       console.error('Failed to delete user:', err)
     }
@@ -77,6 +126,11 @@ export function Users() {
     { key: 'regionName', header: 'Регион' },
     { key: 'role', header: 'Роль' },
     {
+      key: 'registeredAt',
+      header: 'Дата регистрации',
+      render: row => new Date(row.registeredAt as string).toLocaleDateString('ru'),
+    },
+    {
       key: 'active',
       header: 'Статус',
       render: row => (
@@ -91,8 +145,8 @@ export function Users() {
         <ActionButtons
           isActive={row.active as boolean}
           onToggle={() => {}}
-          onEdit={() => {}}
-          onDelete={() => handleDelete(row.id as number)}
+          onEdit={() => handleEditClick(row as User)}
+          onDelete={() => handleDeleteClick(row.id as number)}
         />
       ),
     },
@@ -143,6 +197,9 @@ export function Users() {
           keyField="id"
         />
       )}
+
+      <EditUserModal open={editOpen} user={selectedUser || undefined} onClose={() => setEditOpen(false)} onSubmit={handleEdit} loading={isUpdating} />
+      <ConfirmDeleteModal open={deleteOpen} onClose={() => setDeleteOpen(false)} onConfirm={handleDelete} loading={isDeleting} />
     </Layout>
   )
 }
