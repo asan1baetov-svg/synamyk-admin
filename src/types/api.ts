@@ -51,9 +51,14 @@ export interface AdminSubTest {
   levelNameKy?: string | null
   levelOrder: number
   isPaid: boolean
+  /** price to unlock only this sub-test */
+  price: number
   durationMinutes: number
   questionCount: number
   active: boolean
+  /** free-window: content is free for everyone while now is inside [freeFrom, freeUntil) */
+  freeFrom?: string | null
+  freeUntil?: string | null
 }
 
 export interface AdminTest {
@@ -63,8 +68,11 @@ export interface AdminTest {
   description?: string | null
   descriptionKy?: string | null
   iconUrl?: string | null
+  /** bundle price — one payment unlocks all paid sub-tests */
   price: number
   active: boolean
+  freeFrom?: string | null
+  freeUntil?: string | null
   /** NOT present in AdminTestResponse — only in list rows */
   subject?: string | null
   subTests: AdminSubTest[]
@@ -80,9 +88,22 @@ export interface TestPayload {
   price: number
 }
 
-export interface PricingPayload {
+export interface PricingSubTestEntry {
+  subTestId: number
+  isPaid: boolean
   price: number
-  paidSubTestIds: number[]
+}
+
+export interface PricingPayload {
+  /** bundle price for the whole test */
+  price: number
+  /** full list of the test's sub-tests — omitted ones become isPaid=false, price=0 */
+  subTests: PricingSubTestEntry[]
+}
+
+export interface SchedulePayload {
+  freeFrom: string | null
+  freeUntil: string | null
 }
 
 export interface SubTestPayload {
@@ -92,6 +113,7 @@ export interface SubTestPayload {
   levelNameKy?: string
   levelOrder: number
   isPaid: boolean
+  price: number
   durationMinutes: number
 }
 
@@ -178,6 +200,9 @@ export interface AccessGrant {
   userPhone: string
   testId: number
   testTitle: string
+  /** null for a test-level grant, set for a single sub-test grant */
+  subTestId?: number | null
+  subTestTitle?: string | null
   grantedAt: string
   expiresAt?: string | null
   status: AccessStatus
@@ -185,7 +210,9 @@ export interface AccessGrant {
 
 export interface AccessGrantPayload {
   userId: number
-  testId: number
+  /** exactly one of testId / subTestId */
+  testId?: number
+  subTestId?: number
   durationDays?: number | null
   durationHours?: number | null
   expiresAt?: string | null
@@ -210,6 +237,9 @@ export interface AdminPayment {
   date: string
   earnedPoints: number
   testTitle: string
+  /** null = whole-test (bundle) purchase; set = single sub-test purchase */
+  subTestId?: number | null
+  subTestTitle?: string | null
 }
 
 /* ─────────────────────────── Reports ─────────────────────────── */

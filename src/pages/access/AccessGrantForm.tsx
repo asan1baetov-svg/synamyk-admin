@@ -1,13 +1,20 @@
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { useGrantAccessMutation, useListTestsQuery, useListUsersQuery } from '@/services'
+import {
+  useGrantAccessMutation,
+  useListTestsQuery,
+  useListUsersQuery,
+  useGetTestQuery,
+} from '@/services'
+import type { AccessGrantPayload } from '@/types/api'
 import { extractErrorMessage } from '@/lib/errors'
 import { useDebounce } from '@/hooks/useDebounce'
-import { Button, Input, Field, Select } from '@/components/ui'
-import { formatPhone } from '@/lib/format'
+import { Button, Input, Field, Select, SegmentedControl } from '@/components/ui'
+import { formatPhone, formatMoney } from '@/lib/format'
 import { toServerDateTime } from '@/lib/datetime'
 
 type Preset = '1' | '7' | '30' | '90' | 'permanent' | 'custom'
+type Scope = 'test' | 'subtest'
 
 export function AccessGrantForm({
   presetUserId,
@@ -23,7 +30,9 @@ export function AccessGrantForm({
   const [userQuery, setUserQuery] = useState('')
   const debouncedUser = useDebounce(userQuery, 300)
   const [userId, setUserId] = useState<number | undefined>(presetUserId)
+  const [scope, setScope] = useState<Scope>('test')
   const [testId, setTestId] = useState<number | undefined>(presetTestId)
+  const [subTestId, setSubTestId] = useState<number | undefined>()
   const [preset, setPreset] = useState<Preset>('30')
   const [customDate, setCustomDate] = useState('')
 
@@ -32,22 +41,30 @@ export function AccessGrantForm({
     { skip: Boolean(presetUserId) || debouncedUser.length < 2 }
   )
   const { data: tests } = useListTestsQuery({ size: 200, active: true })
+  const { data: testDetail } = useGetTestQuery(testId!, {
+    skip: scope !== 'subtest' || !testId,
+  })
 
   const [grantAccess, { isLoading }] = useGrantAccessMutation()
 
   const testOptions = useMemo(() => tests?.content ?? [], [tests])
 
   const submit = async () => {
-    if (!userId || !testId) {
-      toast.error('Выберите пользователя и тест')
+    if (!userId) {
+      toast.error('Выберите пользователя')
       return
     }
-    const body: {
-      userId: number
-      testId: number
-      durationDays?: number
-      expiresAt?: string
-    } = { userId, testId }
+    if (scope === 'test' && !testId) {
+      toast.error('Выберите тест')
+      return
+    }
+    if (scope === 'subtest' && !subTestId) {
+      toast.error('Выберите подтест')
+      return
+    }
+
+    const body: AccessGrantPayload = scope === 'test' ? { userId, testId } : { userId, subTestId }
+
     if (preset === 'custom') {
       if (!customDate) {
         toast.error('Укажите дату')
@@ -102,10 +119,27 @@ export function AccessGrantForm({
         </Field>
       )}
 
+      <Field label="Тип доступа">
+        <SegmentedControl<Scope>
+          options={[
+            { value: 'test', label: 'Весь тест' },
+            { value: 'subtest', label: 'Подтест' },
+          ]}
+          value={scope}
+          onChange={v => {
+            setScope(v)
+            setSubTestId(undefined)
+          }}
+        />
+      </Field>
+
       <Field label="Тест">
         <Select
           value={testId ?? ''}
-          onChange={e => setTestId(Number(e.target.value) || undefined)}
+          onChange={e => {
+            setTestId(Number(e.target.value) || undefined)
+            setSubTestId(undefined)
+          }}
           disabled={Boolean(presetTestId)}
         >
           <option value="">— выберите тест —</option>
@@ -116,6 +150,24 @@ export function AccessGrantForm({
           ))}
         </Select>
       </Field>
+
+      {scope === 'subtest' && (
+        <Field label="Подтест">
+          <Select
+            value={subTestId ?? ''}
+            onChange={e => setSubTestId(Number(e.target.value) || undefined)}
+            disabled={!testId}
+          >
+            <option value="">— выберите подтест —</option>
+            {testDetail?.subTests.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.title}
+                {s.isPaid ? ` · ${formatMoney(s.price)}` : ' · бесплатный'}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
 
       <Field label="Срок доступа">
         <div className="flex flex-wrap gap-1">

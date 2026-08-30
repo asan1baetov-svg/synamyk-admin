@@ -485,6 +485,12 @@ export function QuestionEditor({
               </Button>
             </div>
 
+            <p className="text-xs text-muted-foreground">
+              Порядок вариантов важен: сервер сопоставляет их по позиции. Если по вопросу уже
+              проходили тест, вариант, который выбирали ученики, удалить нельзя — только
+              отредактировать его текст.
+            </p>
+
             <SortableList
               items={d.options}
               getId={o => o.key}

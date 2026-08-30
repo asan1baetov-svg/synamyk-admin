@@ -4,20 +4,31 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
 import { AlertTriangle } from 'lucide-react'
-import { useCreateSubTestMutation, useUpdateSubTestMutation } from '@/services'
-import type { AdminSubTest, SubTestPayload } from '@/types/api'
+import {
+  useCreateSubTestMutation,
+  useUpdateSubTestMutation,
+  useUpdateSubTestScheduleMutation,
+} from '@/services'
+import type { AdminSubTest, SchedulePayload, SubTestPayload } from '@/types/api'
 import { extractErrorMessage, extractFieldErrors } from '@/lib/errors'
-import { Dialog, Button, Input, Field } from '@/components/ui'
-import { BilingualProvider, BilingualField } from '@/components/common'
+import { Dialog, Button, Input, Field, Switch } from '@/components/ui'
+import { BilingualProvider, BilingualField, FreeWindowEditor } from '@/components/common'
 
-const schema = z.object({
-  title: z.string().min(1, 'Обязательное поле'),
-  titleKy: z.string().optional(),
-  levelName: z.string().min(1, 'Обязательное поле'),
-  levelNameKy: z.string().optional(),
-  levelOrder: z.number().int().min(0),
-  durationMinutes: z.number().int().min(1, 'Минимум 1 минута'),
-})
+const schema = z
+  .object({
+    title: z.string().min(1, 'Обязательное поле'),
+    titleKy: z.string().optional(),
+    levelName: z.string().min(1, 'Обязательное поле'),
+    levelNameKy: z.string().optional(),
+    levelOrder: z.number().int().min(0),
+    durationMinutes: z.number().int().min(1, 'Минимум 1 минута'),
+    isPaid: z.boolean(),
+    price: z.number().min(0, 'Не меньше 0'),
+  })
+  .refine(v => !v.isPaid || v.price > 0, {
+    message: 'Платный подтест должен иметь цену больше 0',
+    path: ['price'],
+  })
 type FormValues = z.infer<typeof schema>
 
 interface Props {
@@ -32,6 +43,7 @@ export function SubTestFormDialog({ open, onClose, testId, subTest, nextOrder }:
   const editing = Boolean(subTest)
   const [createSubTest, { isLoading: creating }] = useCreateSubTestMutation()
   const [updateSubTest, { isLoading: updating }] = useUpdateSubTestMutation()
+  const [updateSchedule, { isLoading: savingSchedule }] = useUpdateSubTestScheduleMutation()
 
   const {
     handleSubmit,
@@ -43,8 +55,17 @@ export function SubTestFormDialog({ open, onClose, testId, subTest, nextOrder }:
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { title: '', levelName: '', levelOrder: 0, durationMinutes: 20 },
+    defaultValues: {
+      title: '',
+      levelName: '',
+      levelOrder: 0,
+      durationMinutes: 20,
+      isPaid: false,
+      price: 0,
+    },
   })
+
+  const isPaid = watch('isPaid')
 
   useEffect(() => {
     if (!open) return
@@ -55,6 +76,8 @@ export function SubTestFormDialog({ open, onClose, testId, subTest, nextOrder }:
       levelNameKy: subTest?.levelNameKy ?? '',
       levelOrder: subTest?.levelOrder ?? nextOrder ?? 0,
       durationMinutes: subTest?.durationMinutes ?? 20,
+      isPaid: subTest?.isPaid ?? false,
+      price: subTest?.price ?? 0,
     })
   }, [open, subTest, nextOrder, reset])
 
@@ -65,7 +88,8 @@ export function SubTestFormDialog({ open, onClose, testId, subTest, nextOrder }:
       levelName: values.levelName,
       levelNameKy: values.levelNameKy || undefined,
       levelOrder: values.levelOrder,
-      isPaid: subTest?.isPaid ?? false,
+      isPaid: values.isPaid,
+      price: values.isPaid ? values.price : 0,
       durationMinutes: values.durationMinutes,
     }
     try {
@@ -82,6 +106,16 @@ export function SubTestFormDialog({ open, onClose, testId, subTest, nextOrder }:
       if (fe) {
         Object.entries(fe).forEach(([k, v]) => setError(k as keyof FormValues, { message: v }))
       }
+      toast.error(extractErrorMessage(err))
+    }
+  }
+
+  const saveSchedule = async (body: SchedulePayload) => {
+    if (!subTest) return
+    try {
+      await updateSchedule({ subTestId: subTest.id, testId, body }).unwrap()
+      toast.success('Бесплатный период сохранён')
+    } catch (err) {
       toast.error(extractErrorMessage(err))
     }
   }
@@ -157,6 +191,37 @@ export function SubTestFormDialog({ open, onClose, testId, subTest, nextOrder }:
               />
             </Field>
           </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Платный подтест">
+              <div className="flex h-9 items-center">
+                <Switch
+                  checked={isPaid}
+                  onChange={v => setValue('isPaid', v, { shouldValidate: true })}
+                />
+              </div>
+            </Field>
+            <Field label="Цена подтеста, сом" error={errors.price?.message}>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                disabled={!isPaid}
+                {...register('price', { valueAsNumber: true })}
+              />
+            </Field>
+          </div>
+
+          {editing && subTest && (
+            <Field label="Бесплатный период">
+              <FreeWindowEditor
+                freeFrom={subTest.freeFrom}
+                freeUntil={subTest.freeUntil}
+                saving={savingSchedule}
+                onSave={saveSchedule}
+              />
+            </Field>
+          )}
         </form>
       </BilingualProvider>
     </Dialog>

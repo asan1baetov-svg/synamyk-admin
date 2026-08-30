@@ -8,15 +8,30 @@ import {
   useDeleteSubTestMutation,
   useUpdateSubTestMutation,
   useUpdatePricingMutation,
+  useUpdateTestScheduleMutation,
   useSetSubTestPaidMutation,
 } from '@/services'
-import type { AdminSubTest } from '@/types/api'
+import type { AdminSubTest, SchedulePayload } from '@/types/api'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { extractErrorMessage } from '@/lib/errors'
-import { PageHeader, ConfirmDialog, SortableList, EmptyState } from '@/components/common'
+import { formatMoney } from '@/lib/format'
+import { freeWindowLabel } from '@/lib/schedule'
+import {
+  PageHeader,
+  ConfirmDialog,
+  SortableList,
+  EmptyState,
+  FreeWindowEditor,
+} from '@/components/common'
 import { Button, Badge, Card, CardHeader, CardBody, Input, Switch, Skeleton } from '@/components/ui'
 import { TestFormDialog } from './TestFormDialog'
 import { SubTestFormDialog } from './SubTestFormDialog'
+
+interface SubRow {
+  id: number
+  isPaid: boolean
+  price: number
+}
 
 export function TestDetail() {
   const { testId } = useParams()
@@ -29,6 +44,7 @@ export function TestDetail() {
   const [deleteSubTest] = useDeleteSubTestMutation()
   const [updateSubTest] = useUpdateSubTestMutation()
   const [updatePricing, { isLoading: savingPricing }] = useUpdatePricingMutation()
+  const [updateSchedule, { isLoading: savingSchedule }] = useUpdateTestScheduleMutation()
   const [setPaid] = useSetSubTestPaidMutation()
 
   const [editOpen, setEditOpen] = useState(false)
@@ -37,14 +53,18 @@ export function TestDetail() {
   const [editingSub, setEditingSub] = useState<AdminSubTest | null>(null)
   const [subToHide, setSubToHide] = useState<AdminSubTest | null>(null)
 
-  const [price, setPrice] = useState(0)
-  const [paidIds, setPaidIds] = useState<number[]>([])
+  const [bundlePrice, setBundlePrice] = useState(0)
+  const [subRows, setSubRows] = useState<Record<number, SubRow>>({})
   const [orderedSubs, setOrderedSubs] = useState<AdminSubTest[]>([])
 
   useEffect(() => {
     if (!test) return
-    setPrice(test.price)
-    setPaidIds(test.subTests.filter(s => s.isPaid).map(s => s.id))
+    setBundlePrice(test.price)
+    setSubRows(
+      Object.fromEntries(
+        test.subTests.map(s => [s.id, { id: s.id, isPaid: s.isPaid, price: s.price ?? 0 }])
+      )
+    )
     setOrderedSubs([...test.subTests].sort((a, b) => a.levelOrder - b.levelOrder))
   }, [test])
 
@@ -58,18 +78,51 @@ export function TestDetail() {
   }
 
   const savePricing = async () => {
+    const rows = Object.values(subRows)
+    const bad = rows.find(r => r.isPaid && r.price <= 0)
+    if (bad) {
+      const st = test.subTests.find(s => s.id === bad.id)
+      toast.error(`Платный подтест «${st?.title}» должен иметь цену больше 0`)
+      return
+    }
     try {
-      await updatePricing({ id, body: { price, paidSubTestIds: paidIds } }).unwrap()
+      await updatePricing({
+        id,
+        body: {
+          price: bundlePrice,
+          subTests: rows.map(r => ({
+            subTestId: r.id,
+            isPaid: r.isPaid,
+            price: r.isPaid ? r.price : 0,
+          })),
+        },
+      }).unwrap()
       toast.success('Монетизация сохранена')
     } catch (err) {
       toast.error(extractErrorMessage(err))
     }
   }
 
+  const saveTestSchedule = async (body: SchedulePayload) => {
+    try {
+      await updateSchedule({ id, body }).unwrap()
+      toast.success('Бесплатный период сохранён')
+    } catch (err) {
+      toast.error(extractErrorMessage(err))
+    }
+  }
+
   const togglePaidRow = async (sub: AdminSubTest, next: boolean) => {
+    if (next && (subRows[sub.id]?.price ?? sub.price ?? 0) <= 0) {
+      toast.error('Сначала задайте цену подтеста в блоке «Монетизация»')
+      return
+    }
     try {
       await setPaid({ subTestId: sub.id, paid: next, testId: id }).unwrap()
-      setPaidIds(prev => (next ? [...prev, sub.id] : prev.filter(x => x !== sub.id)))
+      setSubRows(prev => ({
+        ...prev,
+        [sub.id]: { ...prev[sub.id], isPaid: next },
+      }))
     } catch (err) {
       toast.error(extractErrorMessage(err))
     }
@@ -92,6 +145,7 @@ export function TestDetail() {
             levelNameKy: s.levelNameKy ?? undefined,
             levelOrder: order,
             isPaid: s.isPaid,
+            price: s.price ?? 0,
             durationMinutes: s.durationMinutes,
           },
         }).unwrap()
@@ -144,7 +198,7 @@ export function TestDetail() {
       <Card>
         <CardHeader
           title="Монетизация"
-          description="Одна оплата открывает все платные подтесты этого теста."
+          description="Bundle открывает все платные подтесты сразу. У каждого подтеста может быть своя цена для отдельной покупки."
           action={
             <Button size="sm" onClick={savePricing} loading={savingPricing}>
               Сохранить
@@ -153,43 +207,100 @@ export function TestDetail() {
         />
         <CardBody className="space-y-4">
           <div className="flex items-center gap-2">
-            <label className="text-sm text-muted-foreground">Цена теста, сом</label>
+            <label className="text-sm text-muted-foreground">Цена всего теста (bundle), сом</label>
             <Input
               type="number"
               min={0}
               step="0.01"
-              value={price}
-              onChange={e => setPrice(Number(e.target.value))}
+              value={bundlePrice}
+              onChange={e => setBundlePrice(Number(e.target.value))}
               className="w-32"
             />
-            <span className="text-xs text-muted-foreground">0 = бесплатный тест</span>
+            <span className="text-xs text-muted-foreground">0 = без bundle</span>
           </div>
-          <div className="divide-y divide-border rounded-md border border-border">
-            {test.subTests.length === 0 && (
-              <p className="px-3 py-3 text-sm text-muted-foreground">Нет подтестов</p>
-            )}
-            {test.subTests.map(s => (
-              <label
-                key={s.id}
-                className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  checked={paidIds.includes(s.id)}
-                  onChange={e =>
-                    setPaidIds(prev =>
-                      e.target.checked ? [...prev, s.id] : prev.filter(x => x !== s.id)
+
+          {test.subTests.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Нет подтестов</p>
+          ) : (
+            <div className="overflow-hidden rounded-md border border-border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-neutral-50 text-left text-xs uppercase text-muted-foreground">
+                    <th className="px-3 py-2">Подтест</th>
+                    <th className="px-3 py-2">Платный</th>
+                    <th className="px-3 py-2">Цена подтеста, сом</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {test.subTests.map(s => {
+                    const row = subRows[s.id] ?? {
+                      id: s.id,
+                      isPaid: s.isPaid,
+                      price: s.price ?? 0,
+                    }
+                    return (
+                      <tr key={s.id} className="border-b border-border last:border-0">
+                        <td className="px-3 py-2">
+                          {s.title}
+                          <span className="ml-2 text-xs text-muted-foreground">{s.levelName}</span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <Switch
+                            checked={row.isPaid}
+                            onChange={v =>
+                              setSubRows(prev => ({
+                                ...prev,
+                                [s.id]: { ...row, isPaid: v },
+                              }))
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            disabled={!row.isPaid}
+                            value={row.isPaid ? row.price : ''}
+                            placeholder="—"
+                            onChange={e =>
+                              setSubRows(prev => ({
+                                ...prev,
+                                [s.id]: {
+                                  ...row,
+                                  price: Number(e.target.value) || 0,
+                                },
+                              }))
+                            }
+                            className="w-28"
+                          />
+                        </td>
+                      </tr>
                     )
-                  }
-                />
-                <span className="flex-1">{s.title}</span>
-                <span className="text-xs text-muted-foreground">{s.levelName}</span>
-              </label>
-            ))}
-          </div>
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">
-            Полная перезапись: подтесты без галочки станут бесплатными.
+            Полная перезапись: подтесты без галочки станут бесплатными (цена 0).
           </p>
+        </CardBody>
+      </Card>
+
+      {/* Free window */}
+      <Card>
+        <CardHeader
+          title="Бесплатный период теста"
+          description="Пока текущее время внутри окна — тест бесплатен для всех пользователей."
+        />
+        <CardBody>
+          <FreeWindowEditor
+            freeFrom={test.freeFrom}
+            freeUntil={test.freeUntil}
+            saving={savingSchedule}
+            onSave={saveTestSchedule}
+          />
         </CardBody>
       </Card>
 
@@ -220,48 +331,56 @@ export function TestDetail() {
               items={orderedSubs}
               getId={s => s.id}
               onReorder={next => persistOrder(next)}
-              renderItem={(s, handle) => (
-                <div className="flex items-center gap-3 rounded-md border border-border bg-white px-3 py-2.5">
-                  {handle}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium">{s.title}</span>
-                      {s.isPaid ? (
-                        <Badge tone="warning">Платный</Badge>
-                      ) : (
-                        <Badge tone="success">Бесплатный</Badge>
-                      )}
-                      {!s.active && <Badge tone="neutral">Скрыт</Badge>}
+              renderItem={(s, handle) => {
+                const win = freeWindowLabel(s.freeFrom, s.freeUntil)
+                return (
+                  <div className="flex items-center gap-3 rounded-md border border-border bg-white px-3 py-2.5">
+                    {handle}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate text-sm font-medium">{s.title}</span>
+                        {s.isPaid ? (
+                          <Badge tone="warning">Платный · {formatMoney(s.price)}</Badge>
+                        ) : (
+                          <Badge tone="success">Бесплатный</Badge>
+                        )}
+                        {win && <Badge tone="info">{win}</Badge>}
+                        {!s.active && <Badge tone="neutral">Скрыт</Badge>}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {s.levelName} · {s.questionCount} вопр. · {s.durationMinutes} мин
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {s.levelName} · {s.questionCount} вопр. · {s.durationMinutes} мин
-                    </p>
-                  </div>
-                  <Switch checked={s.isPaid} onChange={v => togglePaidRow(s, v)} label="Платный" />
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => navigate(`/tests/${id}/sub-tests/${s.id}/questions`)}
-                  >
-                    <ListChecks size={14} /> Вопросы
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setEditingSub(s)
-                      setSubFormOpen(true)
-                    }}
-                  >
-                    <Pencil size={14} />
-                  </Button>
-                  {s.active && (
-                    <Button size="sm" variant="ghost" onClick={() => setSubToHide(s)}>
-                      <EyeOff size={14} />
+                    <Switch
+                      checked={s.isPaid}
+                      onChange={v => togglePaidRow(s, v)}
+                      label="Платный"
+                    />
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => navigate(`/tests/${id}/sub-tests/${s.id}/questions`)}
+                    >
+                      <ListChecks size={14} /> Вопросы
                     </Button>
-                  )}
-                </div>
-              )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setEditingSub(s)
+                        setSubFormOpen(true)
+                      }}
+                    >
+                      <Pencil size={14} />
+                    </Button>
+                    {s.active && (
+                      <Button size="sm" variant="ghost" onClick={() => setSubToHide(s)}>
+                        <EyeOff size={14} />
+                      </Button>
+                    )}
+                  </div>
+                )
+              }}
             />
           )}
         </CardBody>

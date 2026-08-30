@@ -78,7 +78,18 @@ export function PaymentsPage() {
         </div>
       ),
     },
-    { key: 'test', header: 'Тест', render: p => p.testTitle },
+    {
+      key: 'test',
+      header: 'Объект',
+      render: p => (
+        <div>
+          {p.subTestId ? `${p.testTitle} — ${p.subTestTitle}` : p.testTitle}
+          <Badge tone="neutral" className="ml-2">
+            {p.subTestId ? 'Подтест' : 'Полный доступ'}
+          </Badge>
+        </div>
+      ),
+    },
     { key: 'amount', header: 'Сумма', render: p => formatMoney(p.amount) },
     { key: 'method', header: 'Метод', render: p => p.paymentMethod },
     {
@@ -192,7 +203,16 @@ export function PaymentsPage() {
               label="Пользователь"
               value={`${detail.user.fullName} · ${formatPhone(detail.user.phone)}`}
             />
-            <Row label="Тест" value={detail.testTitle} />
+            <Row
+              label="Объект"
+              value={
+                detail.subTestId ? `${detail.testTitle} — ${detail.subTestTitle}` : detail.testTitle
+              }
+            />
+            <Row
+              label="Тип"
+              value={detail.subTestId ? 'Покупка подтеста' : 'Полный доступ (bundle)'}
+            />
             <Row label="Сумма" value={formatMoney(detail.amount)} />
             <Row label="Метод" value={detail.paymentMethod} />
             <Row label="Статус" value={detail.status} />

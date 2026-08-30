@@ -7,6 +7,7 @@ import type {
   Page,
   PricingPayload,
   QuestionPayload,
+  SchedulePayload,
   SubTestPayload,
   TestPayload,
 } from '@/types/api'
@@ -73,6 +74,27 @@ export const testsApi = baseApi.injectEndpoints({
         body,
       }),
       invalidatesTags: (_r, _e, { id }) => [{ type: 'Test', id }, 'TestList'],
+    }),
+
+    updateTestSchedule: b.mutation<AdminTest, { id: number; body: SchedulePayload }>({
+      query: ({ id, body }) => ({
+        url: `/api/admin/tests/${id}/schedule`,
+        method: 'PATCH',
+        body,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: 'Test', id }, 'TestList'],
+    }),
+
+    updateSubTestSchedule: b.mutation<
+      AdminSubTest,
+      { subTestId: number; testId: number; body: SchedulePayload }
+    >({
+      query: ({ subTestId, body }) => ({
+        url: `/api/admin/sub-tests/${subTestId}/schedule`,
+        method: 'PATCH',
+        body,
+      }),
+      invalidatesTags: (_r, _e, { testId }) => [{ type: 'Test', id: testId }],
     }),
 
     setSubTestPaid: b.mutation<AdminSubTest, { subTestId: number; paid: boolean; testId: number }>({
@@ -171,6 +193,8 @@ export const {
   useUpdateTestMutation,
   useDeleteTestMutation,
   useUpdatePricingMutation,
+  useUpdateTestScheduleMutation,
+  useUpdateSubTestScheduleMutation,
   useSetSubTestPaidMutation,
   useCreateSubTestMutation,
   useUpdateSubTestMutation,

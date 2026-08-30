@@ -38,7 +38,7 @@ function NavItem({ to, label, icon: Icon, end, badge }: Item) {
           'flex items-center gap-2.5 rounded-md px-3 py-2 text-[13.5px] font-medium transition-colors',
           isActive
             ? 'bg-primary-soft text-primary'
-            : 'text-muted-foreground hover:bg-neutral-100 hover:text-foreground',
+            : 'text-muted-foreground hover:bg-neutral-100 hover:text-foreground'
         )
       }
     >
@@ -61,13 +61,7 @@ function Section({ label }: { label: string }) {
   )
 }
 
-export function Sidebar({
-  open,
-  onClose,
-}: {
-  open: boolean
-  onClose: () => void
-}) {
+export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { data: sessions } = useActiveSessionsQuery(undefined, {
     pollingInterval: 15000,
   })
@@ -76,24 +70,18 @@ export function Sidebar({
   return (
     <>
       {open && (
-        <div
-          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
-          onClick={onClose}
-          aria-hidden
-        />
+        <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={onClose} aria-hidden />
       )}
 
       <aside
         className={cn(
           'fixed inset-y-0 left-0 z-40 flex h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-border bg-white transition-transform duration-200',
           'lg:sticky lg:top-0 lg:z-auto lg:w-56 lg:translate-x-0',
-          open ? 'translate-x-0' : '-translate-x-full',
+          open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         <div className="flex items-center gap-1 border-b border-border px-4 py-4">
-          <span className="text-lg font-extrabold tracking-tight text-primary">
-            Synamyk
-          </span>
+          <span className="text-lg font-extrabold tracking-tight text-primary">Synamyk</span>
           <span className="text-sm font-medium text-neutral-400">/admin</span>
           <button
             onClick={onClose}
@@ -124,12 +112,7 @@ export function Sidebar({
           <NavItem to="/reports/overview" label="Сводка" icon={FileText} />
           <NavItem to="/reports/tests" label="По тестам" icon={BarChart3} />
           <NavItem to="/reports/payments" label="По оплатам" icon={PieChart} />
-          <NavItem
-            to="/reports/active"
-            label="Сейчас проходят"
-            icon={Radar}
-            badge={activeCount}
-          />
+          <NavItem to="/reports/active" label="Сейчас проходят" icon={Radar} badge={activeCount} />
 
           <Section label="Коммуникации" />
           <NavItem to="/notifications" label="Push-рассылки" icon={Megaphone} />
