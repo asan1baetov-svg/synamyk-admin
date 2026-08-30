@@ -14,7 +14,8 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatDT } from '@/lib/datetime'
 import { PageHeader, ConfirmDialog } from '@/components/common'
-import { Card, CardHeader, CardBody, Button, Badge, Input, Skeleton, Dialog } from '@/components/ui'
+import { Card, CardHeader, CardBody, Button, Badge, Skeleton, Dialog } from '@/components/ui'
+import { MathField, MathText } from '@/components/math'
 import { GameFormDialog } from './GameFormDialog'
 
 export function GameDetail() {
@@ -130,19 +131,19 @@ export function GameDetail() {
           {(game.questions ?? []).map(q => (
             <div key={q.id} className="flex items-start gap-3 rounded-md border border-border p-3">
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{q.text}</p>
+                <MathText block value={q.text} className="text-sm font-medium" />
                 <div className="mt-1 flex flex-wrap gap-2">
                   {q.options.map((o, i) => (
                     <span
                       key={i}
-                      className={`rounded px-1.5 py-0.5 text-xs ${
+                      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs ${
                         o.correct
                           ? 'bg-success-soft text-success'
                           : 'bg-neutral-100 text-muted-foreground'
                       }`}
                     >
-                      {o.correct && '✓ '}
-                      {o.text}
+                      {o.correct && '✓'}
+                      <MathText value={o.text} />
                     </span>
                   ))}
                 </div>
@@ -158,30 +159,42 @@ export function GameDetail() {
       <Card>
         <CardHeader title="Добавить вопрос" />
         <CardBody className="space-y-3">
-          <Input placeholder="Текст вопроса" value={text} onChange={e => setText(e.target.value)} />
-          <div className="space-y-2">
+          <div>
+            <p className="mb-1 text-sm font-medium">Текст вопроса</p>
+            <MathField
+              fieldType="game-question"
+              value={text}
+              onChange={setText}
+              placeholder="Чему равно $\frac{10+20+30}{3}$?"
+            />
+          </div>
+          <div className="space-y-3">
             {options.map((o, i) => (
-              <div key={i} className="flex items-center gap-2">
+              <div key={i} className="flex items-start gap-2">
                 <input
                   type="radio"
                   name="game-correct"
+                  className="mt-3"
                   checked={o.correct}
                   onChange={() =>
                     setOptions(prev => prev.map((x, j) => ({ ...x, correct: j === i })))
                   }
                 />
-                <Input
-                  value={o.text}
-                  onChange={e =>
-                    setOptions(prev =>
-                      prev.map((x, j) => (j === i ? { ...x, text: e.target.value } : x))
-                    )
-                  }
-                  placeholder={`Вариант ${i + 1}`}
-                />
+                <div className="flex-1">
+                  <MathField
+                    fieldType="game-option"
+                    defaultMode="math"
+                    value={o.text}
+                    onChange={v =>
+                      setOptions(prev => prev.map((x, j) => (j === i ? { ...x, text: v } : x)))
+                    }
+                    placeholder={`Вариант ${i + 1}`}
+                  />
+                </div>
                 <Button
                   size="sm"
                   variant="ghost"
+                  className="mt-1"
                   disabled={options.length <= 2}
                   onClick={() => setOptions(prev => prev.filter((_, j) => j !== i))}
                 >
