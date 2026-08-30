@@ -1,32 +1,26 @@
-import type { ReactNode } from 'react'
-import { Box } from '@mui/material'
+import { useEffect, useState } from 'react'
+import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 
-interface LayoutProps {
-  children: ReactNode
-  searchPlaceholder?: string
-  createLabel?: string
-  onCreateClick?: () => void
-}
+export function Layout() {
+  const [navOpen, setNavOpen] = useState(false)
+  const { pathname } = useLocation()
 
-export function Layout({ children, searchPlaceholder, createLabel, onCreateClick }: LayoutProps) {
+  // close the mobile drawer on navigation
+  useEffect(() => {
+    setNavOpen(false)
+  }, [pathname])
+
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#f4f6fa' }}>
-      <Sidebar />
-      <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-        <Header
-          searchPlaceholder={searchPlaceholder}
-          createLabel={createLabel}
-          onCreateClick={onCreateClick}
-        />
-        <Box
-          component="main"
-          sx={{ flex: 1, p: 4, overflow: 'auto' }}
-        >
-          {children}
-        </Box>
-      </Box>
-    </Box>
+    <div className="flex min-h-screen bg-neutral-50">
+      <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Header onMenuClick={() => setNavOpen(true)} />
+        <main className="flex-1 overflow-x-hidden p-4 sm:p-6">
+          <Outlet />
+        </main>
+      </div>
+    </div>
   )
 }

@@ -1,28 +1,35 @@
-import { Chip, ChipProps } from '@mui/material'
+import type { ReactNode } from 'react'
+import { cn } from '@/lib/utils'
 
-interface BadgeProps extends Omit<ChipProps, 'variant'> {
-  variant?: 'success' | 'warning' | 'danger' | 'info' | 'default'
+type Tone = 'neutral' | 'primary' | 'success' | 'warning' | 'error' | 'info'
+
+const tones: Record<Tone, string> = {
+  neutral: 'bg-neutral-100 text-neutral-600',
+  primary: 'bg-primary-soft text-primary',
+  success: 'bg-success-soft text-success',
+  warning: 'bg-warning-soft text-warning',
+  error: 'bg-error-soft text-error',
+  info: 'bg-info-soft text-info',
 }
 
-const variantMap: Record<string, any> = {
-  success: { backgroundColor: '#dcfce7', color: '#166534' },
-  warning: { backgroundColor: '#fef3c7', color: '#92400e' },
-  danger: { backgroundColor: '#fee2e2', color: '#991b1b' },
-  info: { backgroundColor: '#dbeafe', color: '#0c4a6e' },
-  default: { backgroundColor: '#f3f4f6', color: '#374151' },
-}
-
-export function Badge({ variant = 'default', ...props }: BadgeProps) {
+export function Badge({
+  tone = 'neutral',
+  children,
+  className,
+}: {
+  tone?: Tone
+  children: ReactNode
+  className?: string
+}) {
   return (
-    <Chip
-      {...props}
-      size="small"
-      sx={{
-        fontSize: '12px',
-        fontWeight: 500,
-        borderRadius: '6px',
-        ...variantMap[variant],
-      }}
-    />
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+        tones[tone],
+        className
+      )}
+    >
+      {children}
+    </span>
   )
 }

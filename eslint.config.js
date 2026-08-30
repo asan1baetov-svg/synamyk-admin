@@ -26,6 +26,12 @@ export default defineConfig([
     },
     rules: {
       'prettier/prettier': 'warn',
+      // react-compiler preview rules (react-hooks v7) — advisory, not blocking:
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/purity': 'warn',
+      'react-hooks/refs': 'warn',
+      // exporting a hook/helper next to a component only affects HMR granularity:
+      'react-refresh/only-export-components': 'warn',
     },
   },
 ])

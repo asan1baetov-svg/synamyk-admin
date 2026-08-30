@@ -1,112 +1,123 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Box, Button, TextField, Typography, CircularProgress, Alert } from '@mui/material'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { toast } from 'sonner'
+import { useLoginMutation } from '@/services'
+import { saveAuth, clearAuth } from '@/lib/auth'
+import { extractErrorMessage } from '@/lib/errors'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+
+const schema = z.object({
+  phoneDigits: z.string().regex(/^\d{9}$/, 'Введите 9 цифр номера'),
+  password: z.string().min(1, 'Введите пароль'),
+})
+type FormValues = z.infer<typeof schema>
+
+function formatMask(digits: string): string {
+  const d = digits.slice(0, 9)
+  let out = '+996'
+  if (d.length > 0) out += ` (${d.slice(0, 3)}`
+  if (d.length >= 3) out += ')'
+  if (d.length > 3) out += ` ${d.slice(3, 5)}`
+  if (d.length > 5) out += `-${d.slice(5, 7)}`
+  if (d.length > 7) out += `-${d.slice(7, 9)}`
+  return out
+}
 
 export function Login() {
+  useDocumentTitle('Вход')
   const navigate = useNavigate()
-  const [phone, setPhone] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [login, { isLoading }] = useLoginMutation()
+  const [notAdmin, setNotAdmin] = useState(false)
 
-  const handleLogin = async () => {
-    if (!phone || !password) {
-      setError('Заполните все поля')
-      return
-    }
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { phoneDigits: '', password: '' },
+  })
 
-    setLoading(true)
-    setError('')
+  const phoneDigits = watch('phoneDigits')
 
+  const onSubmit = async (values: FormValues) => {
+    setNotAdmin(false)
     try {
-      const response = await fetch('https://synamyk-production.up.railway.app/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, password }),
-      })
+      const res = await login({
+        phone: `996${values.phoneDigits}`,
+        password: values.password,
+      }).unwrap()
 
-      if (!response.ok) {
-        throw new Error('Неверные учетные данные')
+      if (res.role !== 'ADMIN') {
+        clearAuth()
+        setNotAdmin(true)
+        return
       }
-
-      const data = await response.json()
-      localStorage.setItem('token', data.token)
-      localStorage.setItem('user', JSON.stringify(data.user))
-      navigate('/')
+      saveAuth(res)
+      toast.success('Добро пожаловать')
+      navigate('/', { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка входа')
-    } finally {
-      setLoading(false)
+      toast.error(extractErrorMessage(err))
     }
   }
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#f4f6fa',
-      }}
-    >
-      <Box
-        sx={{
-          width: '100%',
-          maxWidth: '400px',
-          backgroundColor: '#ffffff',
-          borderRadius: '16px',
-          padding: 4,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        }}
+    <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        className="w-full max-w-sm rounded-lg bg-white p-8 shadow-sm"
       >
-        <Typography sx={{ fontSize: '24px', fontWeight: 'bold', mb: 1, textAlign: 'center', color: '#0f172a' }}>
-          Synamyk Admin
-        </Typography>
-        <Typography sx={{ fontSize: '14px', color: '#94a3b8', mb: 3, textAlign: 'center' }}>
+        <h1 className="text-center text-2xl font-bold text-foreground-strong">Synamyk Admin</h1>
+        <p className="mt-1 mb-6 text-center text-sm text-muted-foreground">
           Вход в административную панель
-        </Typography>
+        </p>
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        {notAdmin && (
+          <div className="mb-4 rounded-md bg-error-soft px-3 py-2 text-sm text-error">
+            Доступ только для администраторов
+          </div>
+        )}
 
-        <TextField
-          fullWidth
-          label="Номер телефона"
-          placeholder="996700000000"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          sx={{ mb: 2 }}
-        />
-
-        <TextField
-          fullWidth
-          label="Пароль"
-          type="password"
-          placeholder="Admin1234!"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          sx={{ mb: 3 }}
-        />
-
-        <Button
-          fullWidth
-          variant="contained"
-          onClick={handleLogin}
-          disabled={loading}
-          sx={{
-            backgroundColor: '#3b6ff0',
-            padding: '10px',
-            fontSize: '14px',
-            fontWeight: 600,
+        <label className="mb-1 block text-sm font-medium text-foreground">Номер телефона</label>
+        <input
+          inputMode="numeric"
+          autoComplete="tel"
+          value={formatMask(phoneDigits)}
+          onChange={e => {
+            const digits = e.target.value.replace(/\D/g, '')
+            // drop leading country code if user pasted a full number
+            const national = digits.startsWith('996') ? digits.slice(3) : digits
+            setValue('phoneDigits', national.slice(0, 9), { shouldValidate: true })
           }}
-        >
-          {loading ? <CircularProgress size={24} color="inherit" /> : 'Вход'}
-        </Button>
+          placeholder="+996 (___) __-__-__"
+          className="w-full rounded-md border border-border-input px-3 py-2 text-sm outline-none focus:border-primary"
+        />
+        {errors.phoneDigits && (
+          <p className="mt-1 text-xs text-error">{errors.phoneDigits.message}</p>
+        )}
 
-        <Typography sx={{ fontSize: '12px', color: '#94a3b8', mt: 2, textAlign: 'center' }}>
-          Тестовые данные: 996700000000 / Admin1234!
-        </Typography>
-      </Box>
-    </Box>
+        <label className="mt-4 mb-1 block text-sm font-medium text-foreground">Пароль</label>
+        <input
+          type="password"
+          autoComplete="current-password"
+          {...register('password')}
+          className="w-full rounded-md border border-border-input px-3 py-2 text-sm outline-none focus:border-primary"
+        />
+        {errors.password && <p className="mt-1 text-xs text-error">{errors.password.message}</p>}
+
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="mt-6 w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-60"
+        >
+          {isLoading ? 'Вход…' : 'Войти'}
+        </button>
+      </form>
+    </div>
   )
 }

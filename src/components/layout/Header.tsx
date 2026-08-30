@@ -1,94 +1,34 @@
-import { ChevronLeft, ChevronRight, Bell, User, Plus } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
-import { AppBar, Toolbar, Box, IconButton, TextField, Button } from '@mui/material'
-import { SearchBar } from '@/components/shared/SearchBar'
+import { LogOut, Menu } from 'lucide-react'
+import { useAuth } from '@/hooks/useAuth'
+import { formatPhone } from '@/lib/format'
+import { UserAvatar } from '@/components/common/UserAvatar'
 
-interface HeaderProps {
-  searchPlaceholder?: string
-  createLabel?: string
-  onCreateClick?: () => void
-}
-
-export function Header({ searchPlaceholder = 'Поиск...', createLabel, onCreateClick }: HeaderProps) {
-  const navigate = useNavigate()
+export function Header({ onMenuClick }: { onMenuClick: () => void }) {
+  const { session, logout } = useAuth()
 
   return (
-    <AppBar
-      position="sticky"
-      sx={{
-        backgroundColor: '#ffffff',
-        color: '#000',
-        boxShadow: 'none',
-        borderBottom: '1px solid #e8ecf0',
-        zIndex: 100,
-      }}
-    >
-      <Toolbar
-        sx={{
-          height: 64,
-          padding: '0 24px',
-          display: 'flex',
-          gap: 2,
-          alignItems: 'center',
-        }}
+    <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-white px-4 sm:px-6">
+      <button
+        onClick={onMenuClick}
+        className="rounded-md p-1.5 text-muted-foreground hover:bg-neutral-100 lg:hidden"
+        aria-label="Меню"
       >
-        {/* Navigation buttons */}
-        <Box sx={{ display: 'flex', gap: 0.5 }}>
-          <IconButton size="small" onClick={() => navigate(-1)} sx={{ color: '#6b7280' }}>
-            <ChevronLeft size={16} />
-          </IconButton>
-          <IconButton size="small" onClick={() => navigate(1)} sx={{ color: '#6b7280' }}>
-            <ChevronRight size={16} />
-          </IconButton>
-        </Box>
+        <Menu size={18} />
+      </button>
 
-        {/* Search */}
-        <Box sx={{ flex: 1, maxWidth: '512px' }}>
-          <SearchBar placeholder={searchPlaceholder} />
-        </Box>
-
-        {/* Right side */}
-        <Box sx={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 2 }}>
-          <IconButton size="small" sx={{ color: '#6b7280' }}>
-            <Bell size={16} />
-          </IconButton>
-
-          {createLabel && (
-            <Button
-              variant="contained"
-              startIcon={<Plus size={14} />}
-              onClick={onCreateClick}
-              sx={{
-                backgroundColor: '#3b6ff0',
-                textTransform: 'none',
-                fontSize: '14px',
-                padding: '6px 16px',
-                '&:hover': {
-                  backgroundColor: '#2d5ed4',
-                },
-              }}
-            >
-              {createLabel}
-            </Button>
-          )}
-
-          <Box
-            sx={{
-              width: 32,
-              height: 32,
-              borderRadius: '50%',
-              backgroundColor: '#e8ecf0',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              color: '#6b7280',
-            }}
-          >
-            <User size={15} />
-          </Box>
-        </Box>
-      </Toolbar>
-    </AppBar>
+      <div className="ml-auto flex items-center gap-2">
+        <UserAvatar name={session?.phone} size={28} />
+        <span className="hidden text-sm text-muted-foreground sm:inline">
+          {formatPhone(session?.phone)}
+        </span>
+      </div>
+      <button
+        onClick={logout}
+        className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-neutral-100 hover:text-foreground"
+      >
+        <LogOut size={15} />
+        <span className="hidden sm:inline">Выйти</span>
+      </button>
+    </header>
   )
 }
