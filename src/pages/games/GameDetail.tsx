@@ -9,13 +9,15 @@ import {
   useDeleteGameQuestionMutation,
   useGameReportQuery,
 } from '@/services'
-import type { GameOption } from '@/types/api'
+import type { Figure, GameOption } from '@/types/api'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatDT } from '@/lib/datetime'
+import { cleanFigure, validateFigure } from '@/lib/figure'
 import { PageHeader, ConfirmDialog } from '@/components/common'
 import { Card, CardHeader, CardBody, Button, Badge, Skeleton, Dialog } from '@/components/ui'
 import { MathField, MathText } from '@/components/math'
+import { FigureEditor, FigureView } from '@/components/figure'
 import { GameFormDialog } from './GameFormDialog'
 
 export function GameDetail() {
@@ -38,6 +40,7 @@ export function GameDetail() {
 
   // add-question form
   const [text, setText] = useState('')
+  const [figure, setFigure] = useState<Figure | null>(null)
   const [options, setOptions] = useState<GameOption[]>([
     { text: '', correct: true },
     { text: '', correct: false },
@@ -47,6 +50,7 @@ export function GameDetail() {
 
   const resetForm = () => {
     setText('')
+    setFigure(null)
     setOptions([
       { text: '', correct: true },
       { text: '', correct: false },
@@ -66,12 +70,18 @@ export function GameDetail() {
       toast.error('Должен быть ровно один правильный ответ')
       return
     }
+    const figureErrors = validateFigure(figure)
+    if (figureErrors.length) {
+      toast.error(`Чертёж: ${figureErrors[0]}`)
+      return
+    }
     try {
       await addQuestion({
         gameId: id,
         body: {
           text,
           orderIndex: game.questions?.length ?? 0,
+          figure: cleanFigure(figure),
           options,
         },
       }).unwrap()
@@ -132,6 +142,11 @@ export function GameDetail() {
             <div key={q.id} className="flex items-start gap-3 rounded-md border border-border p-3">
               <div className="min-w-0 flex-1">
                 <MathText block value={q.text} className="text-sm font-medium" />
+                {q.figure && (
+                  <div className="mt-2 max-w-xs rounded border border-border p-1">
+                    <FigureView figure={q.figure} />
+                  </div>
+                )}
                 <div className="mt-1 flex flex-wrap gap-2">
                   {q.options.map((o, i) => (
                     <span
@@ -157,7 +172,10 @@ export function GameDetail() {
       </Card>
 
       <Card>
-        <CardHeader title="Добавить вопрос" />
+        <CardHeader
+          title="Добавить вопрос"
+          description="Порядок вопросов и вариантов перемешивается сервером в каждой игре. Формулы — в $...$."
+        />
         <CardBody className="space-y-3">
           <div>
             <p className="mb-1 text-sm font-medium">Текст вопроса</p>
@@ -167,6 +185,10 @@ export function GameDetail() {
               onChange={setText}
               placeholder="Чему равно $\frac{10+20+30}{3}$?"
             />
+          </div>
+          <div>
+            <p className="mb-1 text-sm font-medium">Чертёж (необязательно)</p>
+            <FigureEditor value={figure} onChange={setFigure} />
           </div>
           <div className="space-y-3">
             {options.map((o, i) => (

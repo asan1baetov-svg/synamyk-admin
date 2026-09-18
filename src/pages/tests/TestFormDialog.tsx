@@ -16,6 +16,7 @@ const schema = z.object({
   descriptionKy: z.string().optional(),
   subject: z.string().optional(),
   price: z.number().min(0, 'Не меньше 0'),
+  maxScore: z.number({ error: 'Укажите число' }).int().min(1, 'Минимум 1'),
 })
 type FormValues = z.infer<typeof schema>
 
@@ -46,7 +47,7 @@ export function TestFormDialog({ open, onClose, test, subjectHint }: Props) {
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { title: '', price: 0 },
+    defaultValues: { title: '', price: 0, maxScore: 245 },
   })
 
   useEffect(() => {
@@ -58,6 +59,7 @@ export function TestFormDialog({ open, onClose, test, subjectHint }: Props) {
       descriptionKy: test?.descriptionKy ?? '',
       subject: test?.subject ?? subjectHint ?? '',
       price: test?.price ?? 0,
+      maxScore: test?.maxScore ?? 245,
     })
     setIconKey(test?.iconUrl ?? null)
     setIconPreview(test?.iconUrl ?? null)
@@ -71,6 +73,7 @@ export function TestFormDialog({ open, onClose, test, subjectHint }: Props) {
       descriptionKy: values.descriptionKy || undefined,
       subject: values.subject || undefined,
       price: values.price,
+      maxScore: values.maxScore,
       iconUrl: iconKey ?? undefined,
     }
     try {
@@ -112,6 +115,10 @@ export function TestFormDialog({ open, onClose, test, subjectHint }: Props) {
     >
       <BilingualProvider>
         <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
+          <p className="rounded-md bg-info-soft px-3 py-2 text-xs text-info">
+            Тест проходится целиком: разделы идут подряд, результат — один балл по шкале ОРТ. Цена
+            теста = покупка всего теста.
+          </p>
           <BilingualField
             label="Название"
             required
@@ -159,6 +166,14 @@ export function TestFormDialog({ open, onClose, test, subjectHint }: Props) {
                 min={0}
                 {...register('price', { valueAsNumber: true })}
               />
+            </Field>
+            <Field
+              label="Макс. балл ОРТ"
+              required
+              hint="Шкала результата всего теста (стандарт — 245)"
+              error={errors.maxScore?.message}
+            >
+              <Input type="number" min={1} {...register('maxScore', { valueAsNumber: true })} />
             </Field>
           </div>
 

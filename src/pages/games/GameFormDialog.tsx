@@ -98,7 +98,10 @@ export function GameFormDialog({
               onChange={e => setTimeLimitSeconds(Number(e.target.value) || 0)}
             />
           </Field>
-          <Field label="Вопросов за игру" hint="0 = все в случайном порядке">
+          <Field
+            label="Вопросов за игру"
+            hint="0 = все. Порядок вопросов и вариантов сервер перемешивает в каждой игре"
+          >
             <Input
               type="number"
               min={0}

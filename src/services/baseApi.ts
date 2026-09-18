@@ -21,6 +21,13 @@ export const baseApi = createApi({
     'Game',
     'GameReport',
     'Rating',
+    'Passage',
+    'Product',
+    'AppConfig',
+    'ReadingText',
+    'Region',
+    'District',
+    'School',
   ],
   endpoints: () => ({}),
 })

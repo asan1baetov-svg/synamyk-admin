@@ -147,6 +147,8 @@ export function TestDetail() {
             isPaid: s.isPaid,
             price: s.price ?? 0,
             durationMinutes: s.durationMinutes,
+            maxScore: s.maxScore ?? null,
+            iconUrl: s.iconUrl ?? undefined,
           },
         }).unwrap()
       }
@@ -179,7 +181,14 @@ export function TestDetail() {
             )}
           </span>
         }
-        description={test.titleKy || undefined}
+        description={
+          <>
+            {test.titleKy && <>{test.titleKy} · </>}
+            Макс. балл ОРТ: {test.maxScore ?? 245} · Разделов: {test.subTests.length} ·{' '}
+            {test.subTests.reduce((n, s) => n + s.durationMinutes, 0)} мин ·{' '}
+            {test.subTests.reduce((n, s) => n + s.questionCount, 0)} вопр.
+          </>
+        }
         actions={
           <>
             <Button variant="secondary" onClick={() => setEditOpen(true)}>
@@ -307,7 +316,8 @@ export function TestDetail() {
       {/* Sub-tests */}
       <Card>
         <CardHeader
-          title={`Подтесты (${test.subTests.length})`}
+          title={`Разделы (${test.subTests.length})`}
+          description="Тест проходится целиком: разделы идут подряд в порядке списка, у каждого свой таймер."
           action={
             <Button
               size="sm"
@@ -316,7 +326,7 @@ export function TestDetail() {
                 setSubFormOpen(true)
               }}
             >
-              <Plus size={14} /> Добавить подтест
+              <Plus size={14} /> Добавить раздел
             </Button>
           }
         />
@@ -336,6 +346,11 @@ export function TestDetail() {
                 return (
                   <div className="flex items-center gap-3 rounded-md border border-border bg-white px-3 py-2.5">
                     {handle}
+                    {s.iconUrl ? (
+                      <img src={s.iconUrl} alt="" className="h-8 w-8 rounded object-cover" />
+                    ) : (
+                      <div className="h-8 w-8 rounded bg-neutral-100" />
+                    )}
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="truncate text-sm font-medium">{s.title}</span>
@@ -348,7 +363,8 @@ export function TestDetail() {
                         {!s.active && <Badge tone="neutral">Скрыт</Badge>}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {s.levelName} · {s.questionCount} вопр. · {s.durationMinutes} мин
+                        {s.levelName} · {s.questionCount} вопр. · {s.durationMinutes} мин · Баллы
+                        ОРТ: {s.maxScore != null ? s.maxScore : 'авто'}
                       </p>
                     </div>
                     <Switch
@@ -361,7 +377,7 @@ export function TestDetail() {
                       variant="secondary"
                       onClick={() => navigate(`/tests/${id}/sub-tests/${s.id}/questions`)}
                     >
-                      <ListChecks size={14} /> Вопросы
+                      <ListChecks size={14} /> Вопросы и тексты
                     </Button>
                     <Button
                       size="sm"

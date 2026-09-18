@@ -11,6 +11,7 @@ import { Card, CardHeader, CardBody, Badge, Button, Skeleton } from '@/component
 import { formatDT, formatDate } from '@/lib/datetime'
 import { formatPhone } from '@/lib/format'
 import { UserFormDialog } from './UserFormDialog'
+import { AllAccessCard } from './AllAccessCard'
 import { AccessGrantForm } from '@/pages/access/AccessGrantForm'
 
 export function UserDetail() {
@@ -85,6 +86,8 @@ export function UserDetail() {
           </CardBody>
         </Card>
       </div>
+
+      <AllAccessCard userId={user.id} userName={user.fullName} />
 
       <Card>
         <CardHeader title={`Доступы (${grants?.length ?? 0})`} />

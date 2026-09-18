@@ -48,6 +48,15 @@ const GamesList = lazy(() =>
 const GameDetail = lazy(() =>
   import('@/pages/games/GameDetail').then(m => ({ default: m.GameDetail }))
 )
+const ProductsPage = lazy(() =>
+  import('@/pages/catalog/ProductsPage').then(m => ({ default: m.ProductsPage }))
+)
+const ReadingTextsPage = lazy(() =>
+  import('@/pages/catalog/ReadingTextsPage').then(m => ({ default: m.ReadingTextsPage }))
+)
+const SchoolsPage = lazy(() =>
+  import('@/pages/catalog/SchoolsPage').then(m => ({ default: m.SchoolsPage }))
+)
 const RatingPage = lazy(() =>
   import('@/pages/rating/RatingPage').then(m => ({ default: m.RatingPage }))
 )
@@ -95,6 +104,9 @@ function App() {
 
                   <Route path="news" element={<NewsPage />} />
                   <Route path="videos" element={<VideosPage />} />
+                  <Route path="texts" element={<ReadingTextsPage />} />
+                  <Route path="products" element={<ProductsPage />} />
+                  <Route path="schools" element={<SchoolsPage />} />
 
                   <Route path="users" element={<UsersPage />} />
                   <Route path="users/:userId" element={<UserDetail />} />

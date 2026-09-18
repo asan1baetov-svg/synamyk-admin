@@ -5,6 +5,8 @@ import type {
   AdminTest,
   AdminTestListItem,
   Page,
+  Passage,
+  PassagePayload,
   PricingPayload,
   QuestionPayload,
   SchedulePayload,
@@ -150,6 +152,7 @@ export const testsApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_r, _e, { subTestId, testId }) => [
         { type: 'Question', id: subTestId },
+        { type: 'Passage', id: subTestId },
         ...(testId ? [{ type: 'Test' as const, id: testId }] : []),
         'TestList',
       ],
@@ -166,6 +169,7 @@ export const testsApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_r, _e, { subTestId, testId }) => [
         { type: 'Question', id: subTestId },
+        { type: 'Passage', id: subTestId },
         ...(testId ? [{ type: 'Test' as const, id: testId }] : []),
       ],
     }),
@@ -180,6 +184,37 @@ export const testsApi = baseApi.injectEndpoints({
         ...(testId ? [{ type: 'Test' as const, id: testId }] : []),
         'TestList',
       ],
+    }),
+
+    listPassages: b.query<Passage[], number>({
+      query: subTestId => `/api/admin/sub-tests/${subTestId}/passages`,
+      providesTags: (_r, _e, subTestId) => [{ type: 'Passage', id: subTestId }],
+    }),
+
+    createPassage: b.mutation<Passage, { subTestId: number; body: PassagePayload }>({
+      query: ({ subTestId, body }) => ({
+        url: `/api/admin/sub-tests/${subTestId}/passages`,
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_r, _e, { subTestId }) => [{ type: 'Passage', id: subTestId }],
+    }),
+
+    updatePassage: b.mutation<
+      Passage,
+      { passageId: number; subTestId: number; body: PassagePayload }
+    >({
+      query: ({ passageId, body }) => ({
+        url: `/api/admin/passages/${passageId}`,
+        method: 'PUT',
+        body,
+      }),
+      invalidatesTags: (_r, _e, { subTestId }) => [{ type: 'Passage', id: subTestId }],
+    }),
+
+    deletePassage: b.mutation<void, { passageId: number; subTestId: number }>({
+      query: ({ passageId }) => ({ url: `/api/admin/passages/${passageId}`, method: 'DELETE' }),
+      invalidatesTags: (_r, _e, { subTestId }) => [{ type: 'Passage', id: subTestId }],
     }),
   }),
 })
@@ -203,4 +238,8 @@ export const {
   useCreateQuestionMutation,
   useUpdateQuestionMutation,
   useDeleteQuestionMutation,
+  useListPassagesQuery,
+  useCreatePassageMutation,
+  useUpdatePassageMutation,
+  useDeletePassageMutation,
 } = testsApi

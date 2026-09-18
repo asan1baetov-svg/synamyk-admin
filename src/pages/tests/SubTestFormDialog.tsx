@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -12,7 +12,12 @@ import {
 import type { AdminSubTest, SchedulePayload, SubTestPayload } from '@/types/api'
 import { extractErrorMessage, extractFieldErrors } from '@/lib/errors'
 import { Dialog, Button, Input, Field, Switch } from '@/components/ui'
-import { BilingualProvider, BilingualField, FreeWindowEditor } from '@/components/common'
+import {
+  BilingualProvider,
+  BilingualField,
+  FreeWindowEditor,
+  ImageUploader,
+} from '@/components/common'
 
 const schema = z
   .object({
@@ -24,6 +29,8 @@ const schema = z
     durationMinutes: z.number().int().min(1, 'Минимум 1 минута'),
     isPaid: z.boolean(),
     price: z.number().min(0, 'Не меньше 0'),
+    /** '' = auto (null on the wire) */
+    maxScore: z.string().regex(/^\d*$/, 'Целое число ≥ 0 или пусто'),
   })
   .refine(v => !v.isPaid || v.price > 0, {
     message: 'Платный подтест должен иметь цену больше 0',
@@ -62,8 +69,11 @@ export function SubTestFormDialog({ open, onClose, testId, subTest, nextOrder }:
       durationMinutes: 20,
       isPaid: false,
       price: 0,
+      maxScore: '',
     },
   })
+  const [iconKey, setIconKey] = useState<string | null>(null)
+  const [iconPreview, setIconPreview] = useState<string | null>(null)
 
   const isPaid = watch('isPaid')
 
@@ -78,7 +88,10 @@ export function SubTestFormDialog({ open, onClose, testId, subTest, nextOrder }:
       durationMinutes: subTest?.durationMinutes ?? 20,
       isPaid: subTest?.isPaid ?? false,
       price: subTest?.price ?? 0,
+      maxScore: subTest?.maxScore != null ? String(subTest.maxScore) : '',
     })
+    setIconKey(subTest?.iconUrl ?? null)
+    setIconPreview(subTest?.iconUrl ?? null)
   }, [open, subTest, nextOrder, reset])
 
   const onSubmit = async (values: FormValues) => {
@@ -91,6 +104,8 @@ export function SubTestFormDialog({ open, onClose, testId, subTest, nextOrder }:
       isPaid: values.isPaid,
       price: values.isPaid ? values.price : 0,
       durationMinutes: values.durationMinutes,
+      maxScore: values.maxScore === '' ? null : Number(values.maxScore),
+      iconUrl: iconKey ?? undefined,
     }
     try {
       if (editing && subTest) {
@@ -124,7 +139,7 @@ export function SubTestFormDialog({ open, onClose, testId, subTest, nextOrder }:
     <Dialog
       open={open}
       onClose={onClose}
-      title={editing ? 'Редактировать подтест' : 'Новый подтест'}
+      title={editing ? 'Редактировать раздел' : 'Новый раздел'}
       size="md"
       footer={
         <>
@@ -143,7 +158,7 @@ export function SubTestFormDialog({ open, onClose, testId, subTest, nextOrder }:
             <div className="flex items-start gap-2 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">
               <AlertTriangle size={14} className="mt-0.5 shrink-0" />
               Пользователям с активным доступом к этому тесту придёт push-уведомление о новом
-              подтесте.
+              разделе.
             </div>
           )}
 
@@ -179,7 +194,7 @@ export function SubTestFormDialog({ open, onClose, testId, subTest, nextOrder }:
             )}
           </BilingualField>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Field label="Порядок" error={errors.levelOrder?.message}>
               <Input type="number" min={0} {...register('levelOrder', { valueAsNumber: true })} />
             </Field>
@@ -190,7 +205,27 @@ export function SubTestFormDialog({ open, onClose, testId, subTest, nextOrder }:
                 {...register('durationMinutes', { valueAsNumber: true })}
               />
             </Field>
+            <Field label="Баллы ОРТ" error={errors.maxScore?.message}>
+              <Input inputMode="numeric" placeholder="авто" {...register('maxScore')} />
+            </Field>
           </div>
+          <p className="-mt-2 text-xs text-muted-foreground">
+            Баллы ОРТ пусто = авто: доля макс. балла теста пропорционально сумме баллов вопросов
+            раздела. Эталон ОРТ: Математика 1 — 30 мин, Математика 2 — 60, Аналогии — 30, Чтение —
+            60, Грамматика — 35 (по 30 вопросов).
+          </p>
+
+          <Field label="Иконка раздела">
+            <ImageUploader
+              type="TEST_ICON"
+              value={iconKey}
+              previewUrl={iconPreview}
+              onChange={(key, url) => {
+                setIconKey(key)
+                setIconPreview(url ?? null)
+              }}
+            />
+          </Field>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Платный подтест">

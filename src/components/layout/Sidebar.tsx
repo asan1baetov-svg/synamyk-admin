@@ -14,6 +14,9 @@ import {
   Megaphone,
   Trophy,
   FileText,
+  Library,
+  Package,
+  School,
   X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -100,13 +103,16 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           <NavItem to="/games" label="Игровые тесты" icon={Gamepad2} />
           <NavItem to="/news" label="Новости" icon={Newspaper} />
           <NavItem to="/videos" label="Видеоуроки" icon={Video} />
+          <NavItem to="/texts" label="Библиотека текстов" icon={Library} />
 
           <Section label="Пользователи" />
           <NavItem to="/users" label="Список" icon={Users} />
           <NavItem to="/access" label="Доступы к тестам" icon={KeyRound} />
+          <NavItem to="/schools" label="Школы" icon={School} />
 
           <Section label="Финансы" />
           <NavItem to="/payments" label="Платежи" icon={CreditCard} />
+          <NavItem to="/products" label="Продукты и дата ОРТ" icon={Package} />
 
           <Section label="Отчёты" />
           <NavItem to="/reports/overview" label="Сводка" icon={FileText} />

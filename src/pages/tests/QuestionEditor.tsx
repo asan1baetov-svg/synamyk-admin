@@ -2,12 +2,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import { useCreateQuestionMutation, useUpdateQuestionMutation } from '@/services'
-import type { AdminQuestion, QuestionPayload } from '@/types/api'
+import type {
+  AdminQuestion,
+  ComparisonAnswer,
+  Figure,
+  Passage,
+  QuestionPayload,
+  QuestionType,
+} from '@/types/api'
 import { extractErrorMessage, extractFieldErrors } from '@/lib/errors'
 import { validateLatex } from '@/lib/latex'
-import { Dialog, Button, Input, Field, SegmentedControl } from '@/components/ui'
+import { cleanFigure, validateFigure } from '@/lib/figure'
+import { COMPARISON_ANSWERS, comparisonAnswerOf, comparisonOptions } from '@/lib/question'
+import { Dialog, Button, Input, Field, Select, SegmentedControl } from '@/components/ui'
 import { SortableList, ImageUploader } from '@/components/common'
 import { MathField } from '@/components/math'
+import { FigureEditor } from '@/components/figure'
 import { StudentQuestionPreview } from './StudentQuestionPreview'
 
 const LABELS = ['А', 'Б', 'В', 'Г', 'Д', 'Е']
@@ -22,6 +32,14 @@ interface OptionDraft {
 }
 
 interface Draft {
+  questionType: QuestionType
+  columnA: string
+  columnAKy: string
+  columnB: string
+  columnBKy: string
+  comparisonAnswer: ComparisonAnswer | null
+  figure: Figure | null
+  passageId: number | null
   sectionName: string
   sectionNameKy: string
   text: string
@@ -48,9 +66,21 @@ function relabel(options: OptionDraft[]): OptionDraft[] {
   return options.map((o, i) => ({ ...o, label: LABELS[i] ?? o.label }))
 }
 
+const EMPTY_EXTRA = {
+  questionType: 'STANDARD' as QuestionType,
+  columnA: '',
+  columnAKy: '',
+  columnB: '',
+  columnBKy: '',
+  comparisonAnswer: null,
+  figure: null,
+  passageId: null,
+}
+
 function draftFromQuestion(q?: AdminQuestion | null): Draft {
   if (!q) {
     return {
+      ...EMPTY_EXTRA,
       sectionName: '',
       sectionNameKy: '',
       text: '',
@@ -64,7 +94,16 @@ function draftFromQuestion(q?: AdminQuestion | null): Draft {
     }
   }
   const correctCount = q.options.filter(o => o.isCorrect).length
+  const isComparison = q.questionType === 'COMPARISON'
   return {
+    questionType: isComparison ? 'COMPARISON' : 'STANDARD',
+    columnA: q.columnA ?? '',
+    columnAKy: q.columnAKy ?? '',
+    columnB: q.columnB ?? '',
+    columnBKy: q.columnBKy ?? '',
+    comparisonAnswer: isComparison ? comparisonAnswerOf(q) : null,
+    figure: q.figure ?? null,
+    passageId: q.passageId ?? null,
     sectionName: q.sectionName ?? '',
     sectionNameKy: q.sectionNameKy ?? '',
     text: q.text ?? '',
@@ -74,17 +113,27 @@ function draftFromQuestion(q?: AdminQuestion | null): Draft {
     explanationKy: q.explanationKy ?? '',
     pointValue: q.pointValue ?? 1,
     answerType: correctCount > 1 ? 'many' : 'one',
-    options: q.options
-      .slice()
-      .sort((a, b) => a.orderIndex - b.orderIndex)
-      .map((o, i) => ({
-        key: uid(),
-        label: o.label || LABELS[i] || '',
-        text: o.text ?? '',
-        textKy: o.textKy ?? '',
-        isCorrect: o.isCorrect,
-      })),
+    // a comparison's generated options aren't useful as a starting point for STANDARD
+    options: isComparison
+      ? [emptyOption('А'), emptyOption('Б')]
+      : q.options
+          .slice()
+          .sort((a, b) => a.orderIndex - b.orderIndex)
+          .map((o, i) => ({
+            key: uid(),
+            label: o.label || LABELS[i] || '',
+            text: o.text ?? '',
+            textKy: o.textKy ?? '',
+            isCorrect: o.isCorrect,
+          })),
   }
+}
+
+/** Old drafts in localStorage predate the ОРТ fields — fill the gaps. */
+function normalizeDraft(raw: Partial<Draft>): Draft {
+  const d = { ...draftFromQuestion(null), ...raw }
+  if (d.options.length < 2) d.options = [emptyOption('А'), emptyOption('Б')]
+  return d
 }
 
 function collectLatexErrors(d: Draft, lang: Lang): string[] {
@@ -95,9 +144,14 @@ function collectLatexErrors(d: Draft, lang: Lang): string[] {
     }
   }
   check('Текст вопроса', lang === 'ru' ? d.text : d.textKy || d.text)
-  d.options.forEach((o, i) =>
-    check(`Вариант ${o.label || i + 1}`, lang === 'ru' ? o.text : o.textKy || o.text)
-  )
+  if (d.questionType === 'COMPARISON') {
+    check('Колонка А', lang === 'ru' ? d.columnA : d.columnAKy || d.columnA)
+    check('Колонка Б', lang === 'ru' ? d.columnB : d.columnBKy || d.columnB)
+  } else {
+    d.options.forEach((o, i) =>
+      check(`Вариант ${o.label || i + 1}`, lang === 'ru' ? o.text : o.textKy || o.text)
+    )
+  }
   if (d.explanation || d.explanationKy)
     check('Пояснение', lang === 'ru' ? d.explanation : d.explanationKy || d.explanation)
   return errs
@@ -106,6 +160,15 @@ function collectLatexErrors(d: Draft, lang: Lang): string[] {
 function validate(d: Draft): string[] {
   const errs: string[] = []
   if (!d.text.trim()) errs.push('Текст вопроса обязателен')
+  if (d.pointValue < 1) errs.push('Баллы: минимум 1')
+  errs.push(...validateFigure(d.figure).map(e => `Чертёж: ${e}`))
+  if (d.questionType === 'COMPARISON') {
+    if (!d.columnA.trim()) errs.push('Заполните «Колонка А»')
+    if (!d.columnB.trim()) errs.push('Заполните «Колонка Б»')
+    if (!d.comparisonAnswer) errs.push('Выберите правильный ответ сравнения')
+    errs.push(...collectLatexErrors(d, 'ru'))
+    return errs
+  }
   if (d.options.length < 2 || d.options.length > 6) errs.push('Вариантов должно быть от 2 до 6')
   if (d.options.some(o => !o.text.trim())) errs.push('У каждого варианта должен быть текст')
   const correct = d.options.filter(o => o.isCorrect).length
@@ -115,13 +178,49 @@ function validate(d: Draft): string[] {
   const labels = d.options.map(o => o.label.trim())
   if (labels.some(l => !l)) errs.push('У всех вариантов должна быть метка')
   if (new Set(labels).size !== labels.length) errs.push('Метки вариантов не уникальны')
-  if (d.pointValue < 1) errs.push('Баллы: минимум 1')
   errs.push(...collectLatexErrors(d, 'ru'))
   return errs
 }
 
-function toPayload(d: Draft, orderIndex: number): QuestionPayload {
+/**
+ * @param existing the question being edited (null for create / duplicate). COMPARISON on
+ *   create omits options (server generates the 4 standard ones); on update it resends the
+ *   existing rows so option ids survive the positional merge.
+ */
+function toPayload(d: Draft, orderIndex: number, existing: AdminQuestion | null): QuestionPayload {
+  const comparison = d.questionType === 'COMPARISON'
+  const common = {
+    questionType: d.questionType,
+    figure: cleanFigure(d.figure),
+    passageId: d.passageId,
+    columnA: comparison ? d.columnA : undefined,
+    columnAKy: comparison ? d.columnAKy || undefined : undefined,
+    columnB: comparison ? d.columnB : undefined,
+    columnBKy: comparison ? d.columnBKy || undefined : undefined,
+  }
+  if (comparison && d.comparisonAnswer) {
+    return {
+      ...common,
+      text: d.text,
+      textKy: d.textKy || undefined,
+      sectionName: d.sectionName || undefined,
+      sectionNameKy: d.sectionNameKy || undefined,
+      imageUrl: d.imageUrl || undefined,
+      explanation: d.explanation || undefined,
+      explanationKy: d.explanationKy || undefined,
+      orderIndex,
+      pointValue: d.pointValue,
+      comparisonAnswer: d.comparisonAnswer,
+      options: existing
+        ? comparisonOptions(
+            d.comparisonAnswer,
+            existing.questionType === 'COMPARISON' ? existing.options : undefined
+          )
+        : undefined,
+    }
+  }
   return {
+    ...common,
     text: d.text,
     textKy: d.textKy || undefined,
     sectionName: d.sectionName || undefined,
@@ -154,6 +253,8 @@ interface Props {
   sections: string[]
   /** true when opened via "duplicate" (question has data but no id) */
   duplicate?: boolean
+  /** reading passages of this sub-test (for passageId) */
+  passages: Passage[]
 }
 
 export function QuestionEditor({
@@ -165,6 +266,7 @@ export function QuestionEditor({
   nextOrderIndex,
   sections,
   duplicate,
+  passages,
 }: Props) {
   const editing = Boolean(question && !duplicate)
   const draftKey = `draft:question:${subTestId}:${question && !duplicate ? question.id : 'new'}`
@@ -174,6 +276,7 @@ export function QuestionEditor({
   const [dirty, setDirty] = useState(false)
   const [showErrors, setShowErrors] = useState(false)
   const [explanationOpen, setExplanationOpen] = useState(false)
+  const [figureOpen, setFigureOpen] = useState(false)
   const [orderIndex, setOrderIndex] = useState(nextOrderIndex)
   const textFieldWrapRef = useRef<HTMLDivElement>(null)
 
@@ -195,13 +298,16 @@ export function QuestionEditor({
     setShowErrors(false)
     setOrderIndex(editing && question ? question.orderIndex : nextOrderIndex)
     setExplanationOpen(Boolean(question?.explanation || question?.explanationKy))
+    setFigureOpen(Boolean(question?.figure))
     // offer draft restore
     try {
       const raw = localStorage.getItem(draftKey)
       if (raw) {
         const restore = window.confirm('Найден несохранённый черновик этого вопроса. Восстановить?')
         if (restore) {
-          setD(JSON.parse(raw) as Draft)
+          const restored = normalizeDraft(JSON.parse(raw) as Partial<Draft>)
+          setD(restored)
+          setFigureOpen(Boolean(restored.figure))
           setDirty(true)
         } else {
           localStorage.removeItem(draftKey)
@@ -249,7 +355,7 @@ export function QuestionEditor({
       return null
     }
     try {
-      const payload = toPayload(d, orderIndex)
+      const payload = toPayload(d, orderIndex, editing ? question : null)
       let result: AdminQuestion
       if (editing && question) {
         result = await updateQuestion({
@@ -289,6 +395,9 @@ export function QuestionEditor({
     if (!r) return
     // keep section + points, reset the rest, bump order
     setD({
+      ...EMPTY_EXTRA,
+      questionType: d.questionType,
+      passageId: d.passageId,
       sectionName: d.sectionName,
       sectionNameKy: d.sectionNameKy,
       text: '',
@@ -356,18 +465,37 @@ export function QuestionEditor({
     set({ options: relabel(d.options.filter(o => o.key !== key)) })
   }
 
+  const pick = (ru: string, ky: string) => (lang === 'ru' ? ru : ky || ru)
+  const passage = passages.find(p => p.id === d.passageId) ?? null
+  const isComparison = d.questionType === 'COMPARISON'
   const previewQuestion = {
+    questionType: d.questionType,
+    columnA: pick(d.columnA, d.columnAKy),
+    columnB: pick(d.columnB, d.columnBKy),
+    figure: d.figure,
+    passage: passage
+      ? {
+          title: pick(passage.title ?? '', passage.titleKy ?? ''),
+          text: pick(passage.text, passage.textKy ?? ''),
+        }
+      : null,
     text: lang === 'ru' ? d.text : d.textKy || d.text,
     textKy: d.textKy,
     imageUrl: d.imageUrl,
     explanation: lang === 'ru' ? d.explanation : d.explanationKy || d.explanation,
     explanationKy: d.explanationKy,
     pointValue: d.pointValue,
-    options: d.options.map(o => ({
-      label: o.label,
-      text: lang === 'ru' ? o.text : o.textKy || o.text,
-      isCorrect: o.isCorrect,
-    })),
+    options: isComparison
+      ? COMPARISON_ANSWERS.map((a, i) => ({
+          label: 'АБВГ'[i],
+          text: a.label,
+          isCorrect: a.value === d.comparisonAnswer,
+        }))
+      : d.options.map(o => ({
+          label: o.label,
+          text: lang === 'ru' ? o.text : o.textKy || o.text,
+          isCorrect: o.isCorrect,
+        })),
   }
 
   return (
@@ -375,7 +503,7 @@ export function QuestionEditor({
       open={open}
       onClose={handleClose}
       title={editing ? 'Редактирование вопроса' : 'Новый вопрос'}
-      size="xl"
+      size="full"
       footer={
         <div className="flex w-full items-center justify-between">
           <span className="text-xs text-muted-foreground">
@@ -412,7 +540,18 @@ export function QuestionEditor({
             <span className="text-xs text-muted-foreground">orderIndex: {orderIndex}</span>
           </div>
 
-          <Field label="Раздел">
+          <Field label="Тип вопроса">
+            <SegmentedControl<QuestionType>
+              options={[
+                { value: 'STANDARD', label: 'Обычный' },
+                { value: 'COMPARISON', label: 'Сравнение (Колонка А–Б)' },
+              ]}
+              value={d.questionType}
+              onChange={v => set({ questionType: v })}
+            />
+          </Field>
+
+          <Field label="Тема" hint="Из тем строится разбор «Темалар боюнча» в результате ученика">
             <Input
               list="section-suggestions"
               value={lang === 'ru' ? d.sectionName : d.sectionNameKy}
@@ -423,7 +562,7 @@ export function QuestionEditor({
                     : { sectionNameKy: e.target.value }
                 )
               }
-              placeholder="1-часть: Математика"
+              placeholder="Дроби"
             />
             <datalist id="section-suggestions">
               {sections.map(s => (
@@ -443,95 +582,167 @@ export function QuestionEditor({
             </Field>
           </div>
 
+          <Field
+            label="Текст для чтения"
+            hint={
+              passages.length === 0
+                ? 'У раздела пока нет текстов — их добавляют во вкладке «Тексты»'
+                : undefined
+            }
+          >
+            <Select
+              value={d.passageId ?? ''}
+              onChange={e => set({ passageId: e.target.value ? Number(e.target.value) : null })}
+              disabled={passages.length === 0 && d.passageId == null}
+            >
+              <option value="">— без текста —</option>
+              {passages.map((p, i) => (
+                <option key={p.id} value={p.id}>
+                  {p.title || `Текст ${i + 1}`}
+                  {!p.active ? ' (скрыт)' : ''}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
           <Field label="Изображение (необязательно)">
             <ImageUploaderLazy value={d.imageUrl} onChange={key => set({ imageUrl: key })} />
           </Field>
 
-          <Field label="Тип ответа">
-            <SegmentedControl<'one' | 'many'>
-              options={[
-                { value: 'one', label: 'Один правильный' },
-                { value: 'many', label: 'Несколько правильных' },
-              ]}
-              value={d.answerType}
-              onChange={v => {
-                if (v === 'one') {
-                  // keep only the first correct
-                  const firstCorrect = d.options.find(o => o.isCorrect)?.key
-                  set({
-                    answerType: 'one',
-                    options: d.options.map(o => ({
-                      ...o,
-                      isCorrect: o.key === firstCorrect,
-                    })),
-                  })
-                } else {
-                  set({ answerType: 'many' })
-                }
-              }}
-            />
-          </Field>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Варианты ответов</span>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={addOption}
-                disabled={d.options.length >= 6}
-              >
-                <Plus size={14} /> Добавить
-              </Button>
-            </div>
-
-            <p className="text-xs text-muted-foreground">
-              Порядок вариантов важен: сервер сопоставляет их по позиции. Если по вопросу уже
-              проходили тест, вариант, который выбирали ученики, удалить нельзя — только
-              отредактировать его текст.
-            </p>
-
-            <SortableList
-              items={d.options}
-              getId={o => o.key}
-              onReorder={next => set({ options: relabel(next) })}
-              renderItem={(o, handle) => (
-                <div className="rounded-md border border-border bg-white p-2">
-                  <div className="flex items-center gap-2">
-                    {handle}
-                    <input
-                      type={d.answerType === 'one' ? 'radio' : 'checkbox'}
-                      checked={o.isCorrect}
-                      onChange={e => setCorrect(o.key, e.target.checked)}
-                      title="Правильный ответ"
-                    />
-                    <input
-                      value={o.label}
-                      onChange={e => setOption(o.key, { label: e.target.value })}
-                      className="w-10 rounded border border-border-input px-1.5 py-1 text-center text-sm"
-                    />
-                    <span className="flex-1" />
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => removeOption(o.key)}
-                      disabled={d.options.length <= 2}
-                    >
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                  <div className="mt-2 pl-8">
-                    <MathField
-                      fieldType="option-text"
-                      defaultMode="math"
-                      value={lang === 'ru' ? o.text : o.textKy}
-                      onChange={v => setOption(o.key, lang === 'ru' ? { text: v } : { textKy: v })}
-                    />
-                  </div>
+          {isComparison ? (
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <div className="grid gap-3 @container sm:grid-cols-2">
+                <Field label="Колонка А" required>
+                  <MathField
+                    fieldType="comparison-column"
+                    value={lang === 'ru' ? d.columnA : d.columnAKy}
+                    onChange={v => set(lang === 'ru' ? { columnA: v } : { columnAKy: v })}
+                    rows={2}
+                    placeholder="$\frac{7}{4} - \frac{3}{4}$"
+                  />
+                </Field>
+                <Field label="Колонка Б" required>
+                  <MathField
+                    fieldType="comparison-column"
+                    value={lang === 'ru' ? d.columnB : d.columnBKy}
+                    onChange={v => set(lang === 'ru' ? { columnB: v } : { columnBKy: v })}
+                    rows={2}
+                    placeholder="$\frac{7}{8} - \frac{1}{8}$"
+                  />
+                </Field>
+              </div>
+              <Field label="Правильно" required>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {COMPARISON_ANSWERS.map((a, i) => (
+                    <label key={a.value} className="inline-flex items-center gap-1.5 text-sm">
+                      <input
+                        type="radio"
+                        name="comparison-answer"
+                        checked={d.comparisonAnswer === a.value}
+                        onChange={() => set({ comparisonAnswer: a.value })}
+                      />
+                      <span className="font-semibold text-muted-foreground">{'АБВГ'[i]}.</span>
+                      {a.short}
+                    </label>
+                  ))}
                 </div>
-              )}
-            />
-          </div>
+              </Field>
+              <p className="text-xs text-muted-foreground">
+                Варианты ответа (А больше / Б больше / Равны / Нельзя определить) сервер создаёт
+                сам, с переводом на кыргызский.
+              </p>
+            </div>
+          ) : (
+            <>
+              <Field label="Тип ответа">
+                <SegmentedControl<'one' | 'many'>
+                  options={[
+                    { value: 'one', label: 'Один правильный' },
+                    { value: 'many', label: 'Несколько правильных' },
+                  ]}
+                  value={d.answerType}
+                  onChange={v => {
+                    if (v === 'one') {
+                      // keep only the first correct
+                      const firstCorrect = d.options.find(o => o.isCorrect)?.key
+                      set({
+                        answerType: 'one',
+                        options: d.options.map(o => ({
+                          ...o,
+                          isCorrect: o.key === firstCorrect,
+                        })),
+                      })
+                    } else {
+                      set({ answerType: 'many' })
+                    }
+                  }}
+                />
+              </Field>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Варианты ответов</span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={addOption}
+                    disabled={d.options.length >= 6}
+                  >
+                    <Plus size={14} /> Добавить
+                  </Button>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Порядок вариантов важен: сервер сопоставляет их по позиции. Если по вопросу уже
+                  проходили тест, вариант, который выбирали ученики, удалить нельзя — только
+                  отредактировать его текст.
+                </p>
+
+                <SortableList
+                  items={d.options}
+                  getId={o => o.key}
+                  onReorder={next => set({ options: relabel(next) })}
+                  renderItem={(o, handle) => (
+                    <div className="rounded-md border border-border bg-white p-2">
+                      <div className="flex items-center gap-2">
+                        {handle}
+                        <input
+                          type={d.answerType === 'one' ? 'radio' : 'checkbox'}
+                          checked={o.isCorrect}
+                          onChange={e => setCorrect(o.key, e.target.checked)}
+                          title="Правильный ответ"
+                        />
+                        <input
+                          value={o.label}
+                          onChange={e => setOption(o.key, { label: e.target.value })}
+                          className="w-10 rounded border border-border-input px-1.5 py-1 text-center text-sm"
+                        />
+                        <span className="flex-1" />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => removeOption(o.key)}
+                          disabled={d.options.length <= 2}
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                      <div className="mt-2 pl-8">
+                        <MathField
+                          fieldType="option-text"
+                          defaultMode="math"
+                          value={lang === 'ru' ? o.text : o.textKy}
+                          onChange={v =>
+                            setOption(o.key, lang === 'ru' ? { text: v } : { textKy: v })
+                          }
+                        />
+                      </div>
+                    </div>
+                  )}
+                />
+              </div>
+            </>
+          )}
 
           <Field label="Баллы за верный ответ">
             <Input
@@ -542,6 +753,29 @@ export function QuestionEditor({
               className="w-24"
             />
           </Field>
+
+          <div>
+            <button
+              type="button"
+              onClick={() => setFigureOpen(o => !o)}
+              className="flex items-center gap-1 text-sm font-medium text-foreground"
+            >
+              {figureOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              Чертёж
+              <span className="ml-1 text-xs font-normal text-muted-foreground">
+                {d.figure
+                  ? d.figure.type === 'GEOMETRY'
+                    ? '(геометрия)'
+                    : '(координатная плоскость)'
+                  : '(нет)'}
+              </span>
+            </button>
+            {figureOpen && (
+              <div className="mt-2">
+                <FigureEditor value={d.figure} onChange={figure => set({ figure })} />
+              </div>
+            )}
+          </div>
 
           <div>
             <button

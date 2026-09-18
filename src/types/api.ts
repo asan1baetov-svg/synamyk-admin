@@ -59,6 +59,10 @@ export interface AdminSubTest {
   /** free-window: content is free for everyone while now is inside [freeFrom, freeUntil) */
   freeFrom?: string | null
   freeUntil?: string | null
+  /** explicit ОРТ points of the section; null = proportional share of test.maxScore */
+  maxScore?: number | null
+  /** presigned URL in responses; objectKey on write */
+  iconUrl?: string | null
 }
 
 export interface AdminTest {
@@ -70,6 +74,8 @@ export interface AdminTest {
   iconUrl?: string | null
   /** bundle price — one payment unlocks all paid sub-tests */
   price: number
+  /** ОРТ max score of the whole test (default 245) */
+  maxScore?: number | null
   active: boolean
   freeFrom?: string | null
   freeUntil?: string | null
@@ -86,6 +92,7 @@ export interface TestPayload {
   iconUrl?: string
   subject?: string
   price: number
+  maxScore?: number
 }
 
 export interface PricingSubTestEntry {
@@ -115,6 +122,9 @@ export interface SubTestPayload {
   isPaid: boolean
   price: number
   durationMinutes: number
+  /** null = auto (proportional share of test.maxScore) */
+  maxScore?: number | null
+  iconUrl?: string
 }
 
 /* ─────────────────────────── Questions ─────────────────────────── */
@@ -128,8 +138,19 @@ export interface AdminQuestionOption {
   orderIndex: number
 }
 
+export type QuestionType = 'STANDARD' | 'COMPARISON'
+
+export type ComparisonAnswer = 'A_GREATER' | 'B_GREATER' | 'EQUAL' | 'UNDETERMINED'
+
 export interface AdminQuestion {
   id: number
+  questionType?: QuestionType | null
+  columnA?: string | null
+  columnAKy?: string | null
+  columnB?: string | null
+  columnBKy?: string | null
+  figure?: Figure | null
+  passageId?: number | null
   sectionName?: string | null
   sectionNameKy?: string | null
   text: string
@@ -161,7 +182,100 @@ export interface QuestionPayload {
   explanationKy?: string
   orderIndex: number
   pointValue: number
-  options: QuestionOptionPayload[]
+  /** optional only for COMPARISON + comparisonAnswer (server generates the 4 standard options) */
+  options?: QuestionOptionPayload[]
+  questionType: QuestionType
+  columnA?: string
+  columnAKy?: string
+  columnB?: string
+  columnBKy?: string
+  comparisonAnswer?: ComparisonAnswer
+  figure: Figure | null
+  passageId: number | null
+}
+
+/* ─────────────────────────── Reading passages (inside a section) ─────────────────────────── */
+
+export interface Passage {
+  id: number
+  subTestId: number
+  title?: string | null
+  titleKy?: string | null
+  /** one line per line — the app numbers every 5th */
+  text: string
+  textKy?: string | null
+  imageUrl?: string | null
+  orderIndex: number
+  active: boolean
+  questionCount: number
+}
+
+export interface PassagePayload {
+  title?: string
+  titleKy?: string
+  text: string
+  textKy?: string
+  imageUrl?: string
+  orderIndex: number
+}
+
+/* ─────────────────────────── Figure (coordinate plane / geometry) ─────────────────────────── */
+
+export type FigureType = 'COORDINATE_PLANE' | 'GEOMETRY'
+
+export type FigurePoint = [number, number]
+
+export type FigureElementKind =
+  | 'POINT'
+  | 'TEXT'
+  | 'SEGMENT'
+  | 'LINE'
+  | 'RAY'
+  | 'VECTOR'
+  | 'POLYGON'
+  | 'POLYLINE'
+  | 'CIRCLE'
+  | 'ARC'
+  | 'ANGLE'
+  | 'FUNCTION'
+
+/** Loose shape: which fields are required depends on `kind` (see lib/figure.ts). */
+export interface FigureElement {
+  kind: FigureElementKind
+  x?: number
+  y?: number
+  text?: string
+  from?: FigurePoint
+  to?: FigurePoint
+  points?: FigurePoint[]
+  labels?: string[]
+  center?: FigurePoint
+  radius?: number
+  startAngle?: number
+  endAngle?: number
+  vertex?: FigurePoint
+  right?: boolean
+  expression?: string
+  xFrom?: number
+  xTo?: number
+  label?: string
+  color?: string
+  fill?: string
+  dashed?: boolean
+}
+
+export interface Figure {
+  type: FigureType
+  xMin?: number
+  xMax?: number
+  yMin?: number
+  yMax?: number
+  gridStep?: number
+  showGrid?: boolean
+  showAxes?: boolean
+  xLabel?: string
+  yLabel?: string
+  elements: FigureElement[]
 }
 
 /* ─────────────────────────── Users ─────────────────────────── */
@@ -455,6 +569,7 @@ export interface GameQuestion {
   id?: number
   text: string
   imageUrl?: string | null
+  figure?: Figure | null
   orderIndex: number
   active?: boolean
   options: GameOption[]
@@ -482,6 +597,7 @@ export interface GameTestPayload {
 export interface GameQuestionPayload {
   text: string
   imageUrl?: string
+  figure?: Figure | null
   orderIndex: number
   options: GameOption[]
 }
@@ -515,4 +631,109 @@ export interface RatingEntry {
   rank: number
   totalPoints: number
   pvpWins: number
+}
+
+/* ─────────────────────────── Products & settings ─────────────────────────── */
+
+export type ProductCode = 'ALL_TESTS' | 'ALL_TEXTS'
+
+export interface Product {
+  code: ProductCode
+  title: string
+  description?: string | null
+  price: number
+  oldPrice?: number | null
+  /** true = on sale */
+  available: boolean
+  owned?: boolean
+  features?: string[] | null
+}
+
+export interface ProductPayload {
+  price: number
+  oldPrice?: number | null
+  active: boolean
+}
+
+export interface AppConfig {
+  ortExamDate?: string | null
+  secondsUntilExam?: number | null
+  ortMaxScore?: number | null
+  ortThresholdScore?: number | null
+  schoolRatingMinStudents?: number | null
+}
+
+export interface AllAccessPayload {
+  userId: number
+  product: ProductCode
+  durationDays?: number | null
+  expiresAt?: string | null
+}
+
+/* ─────────────────────────── Reading library («Тексттер») ─────────────────────────── */
+
+export interface ReadingText {
+  id: number
+  title: string
+  titleKy?: string | null
+  content?: string | null
+  contentKy?: string | null
+  /** stored key — send it back as pdfUrl */
+  pdfKey?: string | null
+  /** presigned, temporary */
+  pdfUrl?: string | null
+  free: boolean
+  orderIndex: number
+  active: boolean
+  createdAt: string
+}
+
+export interface ReadingTextPayload {
+  title: string
+  titleKy?: string
+  content?: string
+  contentKy?: string
+  /** key from POST /api/admin/texts/pdf, or an external URL */
+  pdfUrl?: string
+  free: boolean
+  orderIndex: number
+  active: boolean
+}
+
+/* ─────────────────────────── Regions, districts, schools ─────────────────────────── */
+
+export interface Region {
+  id: number
+  name: string
+  nameKy?: string | null
+}
+
+export interface District {
+  id: number
+  regionId: number
+  name: string
+  nameKy?: string | null
+  active: boolean
+}
+
+export interface DistrictPayload {
+  regionId: number
+  name: string
+  nameKy?: string
+  active: boolean
+}
+
+export interface School {
+  id: number
+  districtId: number
+  name: string
+  nameKy?: string | null
+  active: boolean
+}
+
+export interface SchoolPayload {
+  districtId: number
+  name: string
+  nameKy?: string
+  active: boolean
 }

@@ -1,16 +1,29 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Pencil, Copy, EyeOff, Eye, Play } from 'lucide-react'
+import {
+  ArrowLeft,
+  Plus,
+  Pencil,
+  Copy,
+  EyeOff,
+  Eye,
+  Play,
+  Shapes,
+  BookOpenText,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import {
   useListQuestionsQuery,
   useGetTestQuery,
   useUpdateQuestionMutation,
   useDeleteQuestionMutation,
+  useListPassagesQuery,
 } from '@/services'
 import type { AdminQuestion } from '@/types/api'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { extractErrorMessage } from '@/lib/errors'
+import { questionToPayload, comparisonAnswerOf, COMPARISON_ANSWERS } from '@/lib/question'
+import { useUrlParam } from '@/hooks/useUrlState'
 import {
   PageHeader,
   ConfirmDialog,
@@ -18,10 +31,11 @@ import {
   EmptyState,
   SearchInput,
 } from '@/components/common'
-import { Button, Badge, Select, Skeleton, Dialog, SegmentedControl } from '@/components/ui'
+import { Button, Badge, Select, Skeleton, Dialog, SegmentedControl, Tabs } from '@/components/ui'
 import { MathText } from '@/components/math'
 import { QuestionEditor } from './QuestionEditor'
 import { StudentQuestionPreview } from './StudentQuestionPreview'
+import { PassagesTab } from './PassagesTab'
 
 export function QuestionsPage() {
   const { testId, subTestId } = useParams()
@@ -31,12 +45,14 @@ export function QuestionsPage() {
 
   const { data: questions, isLoading } = useListQuestionsQuery(sId)
   const { data: test } = useGetTestQuery(tId)
+  const { data: passages = [] } = useListPassagesQuery(sId)
   const subTest = test?.subTests.find(s => s.id === sId)
   useDocumentTitle(subTest ? `Вопросы — ${subTest.title}` : 'Вопросы')
 
   const [updateQuestion] = useUpdateQuestionMutation()
   const [deleteQuestion] = useDeleteQuestionMutation()
 
+  const [tab, setTab] = useUrlParam('tab', 'questions')
   const [search, setSearch] = useState('')
   const [section, setSection] = useState('')
   const [editorOpen, setEditorOpen] = useState(false)
@@ -81,27 +97,7 @@ export function QuestionsPage() {
           questionId: q.id,
           subTestId: sId,
           testId: tId,
-          body: {
-            text: q.text,
-            textKy: q.textKy ?? undefined,
-            sectionName: q.sectionName ?? undefined,
-            sectionNameKy: q.sectionNameKy ?? undefined,
-            imageUrl: q.imageUrl ?? undefined,
-            explanation: q.explanation ?? undefined,
-            explanationKy: q.explanationKy ?? undefined,
-            orderIndex: idx,
-            pointValue: q.pointValue,
-            options: q.options
-              .slice()
-              .sort((a, b) => a.orderIndex - b.orderIndex)
-              .map((o, oi) => ({
-                label: o.label,
-                text: o.text,
-                textKy: o.textKy ?? undefined,
-                isCorrect: o.isCorrect,
-                orderIndex: oi,
-              })),
-          },
+          body: questionToPayload(q, idx),
         }).unwrap()
       }
       if (changed.length) toast.success(`Порядок обновлён (${changed.length})`)
@@ -138,12 +134,13 @@ export function QuestionsPage() {
       </button>
 
       <PageHeader
-        title={subTest ? `Вопросы: ${subTest.title}` : 'Вопросы'}
+        title={subTest ? `Раздел: ${subTest.title}` : 'Вопросы'}
         description={
           isLoading ? undefined : (
             <>
               Вопросов: {list.length} · Суммарно баллов: {totalPoints}
               {subTest && ` · Время: ${subTest.durationMinutes} мин`}
+              {subTest && ` · Баллы ОРТ: ${subTest.maxScore != null ? subTest.maxScore : 'авто'}`}
             </>
           )
         }
@@ -166,96 +163,143 @@ export function QuestionsPage() {
         }
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <SearchInput value={search} onChange={setSearch} placeholder="Поиск по тексту…" />
-        <Select value={section} onChange={e => setSection(e.target.value)} className="w-56">
-          <option value="">Все разделы</option>
-          {sections.map(s => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </Select>
-      </div>
+      <Tabs
+        tabs={[
+          { value: 'questions', label: `Вопросы (${list.length})` },
+          { value: 'passages', label: `Тексты (${passages.filter(p => p.active).length})` },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
 
-      {isLoading ? (
-        <div className="space-y-2">
-          {[0, 1, 2].map(i => (
-            <Skeleton key={i} className="h-20 w-full" />
-          ))}
-        </div>
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          title="Пока нет вопросов"
-          description="Добавьте первый вопрос — с текстом, формулами и вариантами ответов."
-          action={
-            <Button onClick={openNew}>
-              <Plus size={15} /> Добавить первый вопрос
-            </Button>
-          }
-        />
+      {tab === 'passages' ? (
+        <PassagesTab subTestId={sId} passages={passages} />
       ) : (
-        <SortableList
-          items={filtered}
-          getId={q => q.id}
-          onReorder={next => {
-            // reorder only meaningful when unfiltered
-            if (section || search) {
-              toast.message('Снимите фильтры, чтобы менять порядок')
-              return
-            }
-            persistOrder(next)
-          }}
-          renderItem={(q, handle) => (
-            <div className="flex gap-3 rounded-md border border-border bg-white p-3">
-              <div className="pt-1">{handle}</div>
-              <div className="min-w-0 flex-1">
-                <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-semibold text-foreground">№{q.orderIndex + 1}</span>
-                  {q.sectionName && <Badge tone="neutral">{q.sectionName}</Badge>}
-                  <span>{q.pointValue} балл(ов)</span>
-                  <span>{q.options.length} вар.</span>
-                  {q.options.filter(o => o.isCorrect).length > 1 && (
-                    <Badge tone="info">несколько ответов</Badge>
-                  )}
-                  {!q.active && <Badge tone="neutral">скрыт</Badge>}
-                </div>
-                <MathText block value={q.text} className="text-sm" />
-                <div className="mt-1 flex flex-wrap gap-2">
-                  {q.options.map(o => (
-                    <span
-                      key={o.id}
-                      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs ${
-                        o.isCorrect
-                          ? 'bg-success-soft text-success'
-                          : 'bg-neutral-100 text-muted-foreground'
-                      }`}
-                    >
-                      {o.isCorrect && '✓'} {o.label}: <MathText value={o.text} />
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div className="flex flex-col gap-1">
-                <Button size="sm" variant="ghost" onClick={() => openEdit(q)}>
-                  <Pencil size={14} />
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => openDuplicate(q)}>
-                  <Copy size={14} />
-                </Button>
-                {q.active ? (
-                  <Button size="sm" variant="ghost" onClick={() => setToHide(q)}>
-                    <EyeOff size={14} />
-                  </Button>
-                ) : (
-                  <span title="Вернуть через API нельзя">
-                    <Eye size={14} className="m-2 text-neutral-300" />
-                  </span>
-                )}
-              </div>
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchInput value={search} onChange={setSearch} placeholder="Поиск по тексту…" />
+            <Select value={section} onChange={e => setSection(e.target.value)} className="w-56">
+              <option value="">Все темы</option>
+              {sections.map(s => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-2">
+              {[0, 1, 2].map(i => (
+                <Skeleton key={i} className="h-20 w-full" />
+              ))}
             </div>
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              title="Пока нет вопросов"
+              description="Добавьте первый вопрос — с текстом, формулами и вариантами ответов."
+              action={
+                <Button onClick={openNew}>
+                  <Plus size={15} /> Добавить первый вопрос
+                </Button>
+              }
+            />
+          ) : (
+            <SortableList
+              items={filtered}
+              getId={q => q.id}
+              onReorder={next => {
+                // reorder only meaningful when unfiltered
+                if (section || search) {
+                  toast.message('Снимите фильтры, чтобы менять порядок')
+                  return
+                }
+                persistOrder(next)
+              }}
+              renderItem={(q, handle) => (
+                <div className="flex gap-3 rounded-md border border-border bg-white p-3">
+                  <div className="pt-1">{handle}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground">№{q.orderIndex + 1}</span>
+                      {q.sectionName && <Badge tone="neutral">{q.sectionName}</Badge>}
+                      <span>{q.pointValue} балл(ов)</span>
+                      <span>{q.options.length} вар.</span>
+                      {q.questionType === 'COMPARISON' ? (
+                        <Badge tone="primary">сравнение</Badge>
+                      ) : (
+                        q.options.filter(o => o.isCorrect).length > 1 && (
+                          <Badge tone="info">несколько ответов</Badge>
+                        )
+                      )}
+                      {q.figure && (
+                        <Badge tone="neutral">
+                          <Shapes size={11} className="mr-1" /> чертёж
+                        </Badge>
+                      )}
+                      {q.passageId != null && (
+                        <Badge tone="neutral">
+                          <BookOpenText size={11} className="mr-1" />
+                          {passages.find(p => p.id === q.passageId)?.title || 'текст'}
+                        </Badge>
+                      )}
+                      {!q.active && <Badge tone="neutral">скрыт</Badge>}
+                    </div>
+                    <MathText block value={q.text} className="text-sm" />
+                    {q.questionType === 'COMPARISON' && (
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="rounded bg-neutral-100 px-1.5 py-0.5">
+                          А: <MathText value={q.columnA ?? ''} />
+                        </span>
+                        <span className="rounded bg-neutral-100 px-1.5 py-0.5">
+                          Б: <MathText value={q.columnB ?? ''} />
+                        </span>
+                        <span className="rounded bg-success-soft px-1.5 py-0.5 text-success">
+                          ✓{' '}
+                          {COMPARISON_ANSWERS.find(a => a.value === comparisonAnswerOf(q))?.label ??
+                            '—'}
+                        </span>
+                      </div>
+                    )}
+                    <div
+                      className={`mt-1 flex flex-wrap gap-2 ${q.questionType === 'COMPARISON' ? 'hidden' : ''}`}
+                    >
+                      {q.options.map(o => (
+                        <span
+                          key={o.id}
+                          className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs ${
+                            o.isCorrect
+                              ? 'bg-success-soft text-success'
+                              : 'bg-neutral-100 text-muted-foreground'
+                          }`}
+                        >
+                          {o.isCorrect && '✓'} {o.label}: <MathText value={o.text} />
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(q)}>
+                      <Pencil size={14} />
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => openDuplicate(q)}>
+                      <Copy size={14} />
+                    </Button>
+                    {q.active ? (
+                      <Button size="sm" variant="ghost" onClick={() => setToHide(q)}>
+                        <EyeOff size={14} />
+                      </Button>
+                    ) : (
+                      <span title="Вернуть через API нельзя">
+                        <Eye size={14} className="m-2 text-neutral-300" />
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            />
           )}
-        />
+        </>
       )}
 
       <QuestionEditor
@@ -267,6 +311,7 @@ export function QuestionsPage() {
         duplicate={duplicating}
         nextOrderIndex={list.length}
         sections={sections}
+        passages={passages}
       />
 
       {/* subtest preview */}
@@ -312,18 +357,17 @@ export function QuestionsPage() {
         {list[previewIdx] && (
           <StudentQuestionPreview
             q={{
-              text: list[previewIdx].text,
-              textKy: list[previewIdx].textKy,
-              imageUrl: list[previewIdx].imageUrl,
-              explanation: list[previewIdx].explanation,
-              explanationKy: list[previewIdx].explanationKy,
-              pointValue: list[previewIdx].pointValue,
-              options: list[previewIdx].options.map(o => ({
-                label: o.label,
-                text: o.text,
-                textKy: o.textKy,
-                isCorrect: o.isCorrect,
-              })),
+              ...list[previewIdx],
+              passage: (() => {
+                const p = passages.find(x => x.id === list[previewIdx].passageId)
+                if (!p) return null
+                const ky = previewLang === 'ky'
+                return {
+                  title: (ky && p.titleKy) || p.title,
+                  text: (ky && p.textKy) || p.text,
+                }
+              })(),
+              options: list[previewIdx].options.slice().sort((a, b) => a.orderIndex - b.orderIndex),
             }}
             lang={previewLang}
             index={previewIdx + 1}

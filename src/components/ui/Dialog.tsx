@@ -11,7 +11,7 @@ interface DialogProps {
   description?: ReactNode
   children: ReactNode
   footer?: ReactNode
-  size?: 'sm' | 'md' | 'lg' | 'xl'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
 }
 
 const sizeCls = {
@@ -19,6 +19,7 @@ const sizeCls = {
   md: 'max-w-lg',
   lg: 'max-w-2xl',
   xl: 'max-w-5xl',
+  full: 'max-w-[1400px]',
 }
 
 export function Dialog({
