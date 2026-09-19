@@ -9,13 +9,11 @@ import {
   useUpdateSubTestMutation,
   useUpdatePricingMutation,
   useUpdateTestScheduleMutation,
-  useSetSubTestPaidMutation,
 } from '@/services'
 import type { AdminSubTest, SchedulePayload } from '@/types/api'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney } from '@/lib/format'
-import { freeWindowLabel } from '@/lib/schedule'
 import {
   PageHeader,
   ConfirmDialog,
@@ -23,15 +21,9 @@ import {
   EmptyState,
   FreeWindowEditor,
 } from '@/components/common'
-import { Button, Badge, Card, CardHeader, CardBody, Input, Switch, Skeleton } from '@/components/ui'
+import { Button, Badge, Card, CardHeader, CardBody, Input, Skeleton } from '@/components/ui'
 import { TestFormDialog } from './TestFormDialog'
 import { SubTestFormDialog } from './SubTestFormDialog'
-
-interface SubRow {
-  id: number
-  isPaid: boolean
-  price: number
-}
 
 export function TestDetail() {
   const { testId } = useParams()
@@ -45,7 +37,6 @@ export function TestDetail() {
   const [updateSubTest] = useUpdateSubTestMutation()
   const [updatePricing, { isLoading: savingPricing }] = useUpdatePricingMutation()
   const [updateSchedule, { isLoading: savingSchedule }] = useUpdateTestScheduleMutation()
-  const [setPaid] = useSetSubTestPaidMutation()
 
   const [editOpen, setEditOpen] = useState(false)
   const [hideOpen, setHideOpen] = useState(false)
@@ -53,18 +44,12 @@ export function TestDetail() {
   const [editingSub, setEditingSub] = useState<AdminSubTest | null>(null)
   const [subToHide, setSubToHide] = useState<AdminSubTest | null>(null)
 
-  const [bundlePrice, setBundlePrice] = useState(0)
-  const [subRows, setSubRows] = useState<Record<number, SubRow>>({})
+  const [price, setPrice] = useState(0)
   const [orderedSubs, setOrderedSubs] = useState<AdminSubTest[]>([])
 
   useEffect(() => {
     if (!test) return
-    setBundlePrice(test.price)
-    setSubRows(
-      Object.fromEntries(
-        test.subTests.map(s => [s.id, { id: s.id, isPaid: s.isPaid, price: s.price ?? 0 }])
-      )
-    )
+    setPrice(test.price)
     setOrderedSubs([...test.subTests].sort((a, b) => a.levelOrder - b.levelOrder))
   }, [test])
 
@@ -78,26 +63,13 @@ export function TestDetail() {
   }
 
   const savePricing = async () => {
-    const rows = Object.values(subRows)
-    const bad = rows.find(r => r.isPaid && r.price <= 0)
-    if (bad) {
-      const st = test.subTests.find(s => s.id === bad.id)
-      toast.error(`Платный подтест «${st?.title}» должен иметь цену больше 0`)
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error('Цена не может быть отрицательной')
       return
     }
     try {
-      await updatePricing({
-        id,
-        body: {
-          price: bundlePrice,
-          subTests: rows.map(r => ({
-            subTestId: r.id,
-            isPaid: r.isPaid,
-            price: r.isPaid ? r.price : 0,
-          })),
-        },
-      }).unwrap()
-      toast.success('Монетизация сохранена')
+      await updatePricing({ id, body: { price } }).unwrap()
+      toast.success('Цена сохранена')
     } catch (err) {
       toast.error(extractErrorMessage(err))
     }
@@ -107,22 +79,6 @@ export function TestDetail() {
     try {
       await updateSchedule({ id, body }).unwrap()
       toast.success('Бесплатный период сохранён')
-    } catch (err) {
-      toast.error(extractErrorMessage(err))
-    }
-  }
-
-  const togglePaidRow = async (sub: AdminSubTest, next: boolean) => {
-    if (next && (subRows[sub.id]?.price ?? sub.price ?? 0) <= 0) {
-      toast.error('Сначала задайте цену подтеста в блоке «Монетизация»')
-      return
-    }
-    try {
-      await setPaid({ subTestId: sub.id, paid: next, testId: id }).unwrap()
-      setSubRows(prev => ({
-        ...prev,
-        [sub.id]: { ...prev[sub.id], isPaid: next },
-      }))
     } catch (err) {
       toast.error(extractErrorMessage(err))
     }
@@ -144,8 +100,6 @@ export function TestDetail() {
             levelName: s.levelName,
             levelNameKy: s.levelNameKy ?? undefined,
             levelOrder: order,
-            isPaid: s.isPaid,
-            price: s.price ?? 0,
             durationMinutes: s.durationMinutes,
             maxScore: s.maxScore ?? null,
             iconUrl: s.iconUrl ?? undefined,
@@ -203,97 +157,37 @@ export function TestDetail() {
         }
       />
 
-      {/* Monetization */}
+      {/* Price */}
       <Card>
         <CardHeader
-          title="Монетизация"
-          description="Bundle открывает все платные подтесты сразу. У каждого подтеста может быть своя цена для отдельной покупки."
+          title="Цена"
+          description="Покупается только тест целиком — одна оплата открывает все разделы."
           action={
-            <Button size="sm" onClick={savePricing} loading={savingPricing}>
+            <Button
+              size="sm"
+              onClick={savePricing}
+              loading={savingPricing}
+              disabled={price === test.price}
+            >
               Сохранить
             </Button>
           }
         />
-        <CardBody className="space-y-4">
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-muted-foreground">Цена всего теста (bundle), сом</label>
+        <CardBody>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-sm text-muted-foreground">Цена теста, сом</label>
             <Input
               type="number"
               min={0}
               step="0.01"
-              value={bundlePrice}
-              onChange={e => setBundlePrice(Number(e.target.value))}
+              value={price}
+              onChange={e => setPrice(Number(e.target.value))}
               className="w-32"
             />
-            <span className="text-xs text-muted-foreground">0 = без bundle</span>
+            <span className="text-xs text-muted-foreground">
+              0 = бесплатный · сейчас {formatMoney(test.price)}
+            </span>
           </div>
-
-          {test.subTests.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Нет подтестов</p>
-          ) : (
-            <div className="overflow-hidden rounded-md border border-border">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-neutral-50 text-left text-xs uppercase text-muted-foreground">
-                    <th className="px-3 py-2">Подтест</th>
-                    <th className="px-3 py-2">Платный</th>
-                    <th className="px-3 py-2">Цена подтеста, сом</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {test.subTests.map(s => {
-                    const row = subRows[s.id] ?? {
-                      id: s.id,
-                      isPaid: s.isPaid,
-                      price: s.price ?? 0,
-                    }
-                    return (
-                      <tr key={s.id} className="border-b border-border last:border-0">
-                        <td className="px-3 py-2">
-                          {s.title}
-                          <span className="ml-2 text-xs text-muted-foreground">{s.levelName}</span>
-                        </td>
-                        <td className="px-3 py-2">
-                          <Switch
-                            checked={row.isPaid}
-                            onChange={v =>
-                              setSubRows(prev => ({
-                                ...prev,
-                                [s.id]: { ...row, isPaid: v },
-                              }))
-                            }
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <Input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            disabled={!row.isPaid}
-                            value={row.isPaid ? row.price : ''}
-                            placeholder="—"
-                            onChange={e =>
-                              setSubRows(prev => ({
-                                ...prev,
-                                [s.id]: {
-                                  ...row,
-                                  price: Number(e.target.value) || 0,
-                                },
-                              }))
-                            }
-                            className="w-28"
-                          />
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <p className="text-xs text-muted-foreground">
-            Полная перезапись: подтесты без галочки станут бесплатными (цена 0).
-          </p>
         </CardBody>
       </Card>
 
@@ -333,8 +227,8 @@ export function TestDetail() {
         <CardBody>
           {orderedSubs.length === 0 ? (
             <EmptyState
-              title="Пока нет подтестов"
-              description="Подтест — это уровень внутри теста со своей длительностью и вопросами."
+              title="Пока нет разделов"
+              description="Раздел — часть теста со своим таймером, вопросами и текстами."
             />
           ) : (
             <SortableList
@@ -342,7 +236,6 @@ export function TestDetail() {
               getId={s => s.id}
               onReorder={next => persistOrder(next)}
               renderItem={(s, handle) => {
-                const win = freeWindowLabel(s.freeFrom, s.freeUntil)
                 return (
                   <div className="flex items-center gap-3 rounded-md border border-border bg-white px-3 py-2.5">
                     {handle}
@@ -354,12 +247,6 @@ export function TestDetail() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="truncate text-sm font-medium">{s.title}</span>
-                        {s.isPaid ? (
-                          <Badge tone="warning">Платный · {formatMoney(s.price)}</Badge>
-                        ) : (
-                          <Badge tone="success">Бесплатный</Badge>
-                        )}
-                        {win && <Badge tone="info">{win}</Badge>}
                         {!s.active && <Badge tone="neutral">Скрыт</Badge>}
                       </div>
                       <p className="text-xs text-muted-foreground">
@@ -367,11 +254,6 @@ export function TestDetail() {
                         ОРТ: {s.maxScore != null ? s.maxScore : 'авто'}
                       </p>
                     </div>
-                    <Switch
-                      checked={s.isPaid}
-                      onChange={v => togglePaidRow(s, v)}
-                      label="Платный"
-                    />
                     <Button
                       size="sm"
                       variant="secondary"
@@ -437,15 +319,15 @@ export function TestDetail() {
           if (!subToHide) return
           try {
             await deleteSubTest({ subTestId: subToHide.id, testId: id }).unwrap()
-            toast.success('Подтест скрыт')
+            toast.success('Раздел скрыт')
           } catch (err) {
             toast.error(extractErrorMessage(err))
           } finally {
             setSubToHide(null)
           }
         }}
-        title="Скрыть подтест?"
-        description="Вернуть скрытый подтест через админку нельзя."
+        title="Скрыть раздел?"
+        description="Вернуть скрытый раздел через админку нельзя."
         confirmLabel="Скрыть"
         destructive
       />

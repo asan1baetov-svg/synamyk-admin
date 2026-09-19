@@ -7,19 +7,17 @@ import {
   useListUsersQuery,
   useGetTestQuery,
   useUpdateTestScheduleMutation,
-  useUpdateSubTestScheduleMutation,
 } from '@/services'
 import type { AccessGrantPayload, SchedulePayload } from '@/types/api'
 import { extractErrorMessage } from '@/lib/errors'
 import { useDebounce } from '@/hooks/useDebounce'
 import { Button, Input, Field, Select, SegmentedControl } from '@/components/ui'
 import { FreeWindowEditor } from '@/components/common'
-import { formatPhone, formatMoney } from '@/lib/format'
+import { formatPhone } from '@/lib/format'
 import { toServerDateTime } from '@/lib/datetime'
 import { cn } from '@/lib/utils'
 
 type Preset = '1' | '7' | '30' | '90' | 'permanent' | 'custom'
-type Scope = 'test' | 'subtest'
 type Audience = 'user' | 'all'
 
 /* ── searchable user dropdown ─────────────────────────────────── */
@@ -130,9 +128,7 @@ export function AccessGrantForm({
   const [audience, setAudience] = useState<Audience>('user')
   const [userId, setUserId] = useState<number | undefined>(presetUserId)
   const [userLabel, setUserLabel] = useState(presetUserLabel ?? '')
-  const [scope, setScope] = useState<Scope>('test')
   const [testId, setTestId] = useState<number | undefined>(presetTestId)
-  const [subTestId, setSubTestId] = useState<number | undefined>()
   const [preset, setPreset] = useState<Preset>('30')
   const [customDate, setCustomDate] = useState('')
 
@@ -141,20 +137,17 @@ export function AccessGrantForm({
 
   const [grantAccess, { isLoading }] = useGrantAccessMutation()
   const [updateTestSchedule, { isLoading: savingTestWin }] = useUpdateTestScheduleMutation()
-  const [updateSubTestSchedule, { isLoading: savingSubWin }] = useUpdateSubTestScheduleMutation()
 
   const testOptions = useMemo(() => tests?.content ?? [], [tests])
-  const pickedSub = testDetail?.subTests.find(s => s.id === subTestId)
 
   const submit = async () => {
     if (!userId) {
       toast.error('Выберите пользователя')
       return
     }
-    if (scope === 'test' && !testId) return toast.error('Выберите тест')
-    if (scope === 'subtest' && !subTestId) return toast.error('Выберите подтест')
+    if (!testId) return toast.error('Выберите тест')
 
-    const body: AccessGrantPayload = scope === 'test' ? { userId, testId } : { userId, subTestId }
+    const body: AccessGrantPayload = { userId, testId }
 
     if (preset === 'custom') {
       if (!customDate) return toast.error('Укажите дату')
@@ -173,19 +166,11 @@ export function AccessGrantForm({
 
   const saveWindow = async (win: SchedulePayload) => {
     try {
-      if (scope === 'test') {
-        if (!testId) {
-          toast.error('Выберите тест')
-          return
-        }
-        await updateTestSchedule({ id: testId, body: win }).unwrap()
-      } else {
-        if (!subTestId || !testId) {
-          toast.error('Выберите подтест')
-          return
-        }
-        await updateSubTestSchedule({ subTestId, testId, body: win }).unwrap()
+      if (!testId) {
+        toast.error('Выберите тест')
+        return
       }
+      await updateTestSchedule({ id: testId, body: win }).unwrap()
       toast.success('Бесплатный период сохранён')
       onGranted?.()
     } catch (err) {
@@ -195,27 +180,10 @@ export function AccessGrantForm({
 
   const targetSelectors = (
     <>
-      <Field label="Тип доступа">
-        <SegmentedControl<Scope>
-          options={[
-            { value: 'test', label: 'Весь тест' },
-            { value: 'subtest', label: 'Подтест' },
-          ]}
-          value={scope}
-          onChange={v => {
-            setScope(v)
-            setSubTestId(undefined)
-          }}
-        />
-      </Field>
-
       <Field label="Тест">
         <Select
           value={testId ?? ''}
-          onChange={e => {
-            setTestId(Number(e.target.value) || undefined)
-            setSubTestId(undefined)
-          }}
+          onChange={e => setTestId(Number(e.target.value) || undefined)}
           disabled={Boolean(presetTestId)}
         >
           <option value="">— выберите тест —</option>
@@ -226,24 +194,6 @@ export function AccessGrantForm({
           ))}
         </Select>
       </Field>
-
-      {scope === 'subtest' && (
-        <Field label="Подтест">
-          <Select
-            value={subTestId ?? ''}
-            onChange={e => setSubTestId(Number(e.target.value) || undefined)}
-            disabled={!testId}
-          >
-            <option value="">— выберите подтест —</option>
-            {testDetail?.subTests.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.title}
-                {s.isPaid ? ` · ${formatMoney(s.price)}` : ' · бесплатный'}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      )}
     </>
   )
 
@@ -326,18 +276,17 @@ export function AccessGrantForm({
       ) : (
         <>
           <div className="rounded-md bg-info-soft px-3 py-2 text-xs text-info">
-            «Всем» = бесплатный период. Тест/подтест станет бесплатным для всех пользователей
-            (включая будущих), пока текущее время внутри окна. Индивидуальные строки доступа не
-            создаются.
+            «Всем» = бесплатный период. Тест станет бесплатным для всех пользователей (включая
+            будущих), пока текущее время внутри окна. Индивидуальные строки доступа не создаются.
           </div>
 
           {targetSelectors}
 
           <Field label="Бесплатный период">
             <FreeWindowEditor
-              freeFrom={scope === 'test' ? testDetail?.freeFrom : pickedSub?.freeFrom}
-              freeUntil={scope === 'test' ? testDetail?.freeUntil : pickedSub?.freeUntil}
-              saving={savingTestWin || savingSubWin}
+              freeFrom={testDetail?.freeFrom}
+              freeUntil={testDetail?.freeUntil}
+              saving={savingTestWin}
               onSave={saveWindow}
             />
           </Field>

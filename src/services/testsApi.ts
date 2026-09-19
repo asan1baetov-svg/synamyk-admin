@@ -87,26 +87,6 @@ export const testsApi = baseApi.injectEndpoints({
       invalidatesTags: (_r, _e, { id }) => [{ type: 'Test', id }, 'TestList'],
     }),
 
-    updateSubTestSchedule: b.mutation<
-      AdminSubTest,
-      { subTestId: number; testId: number; body: SchedulePayload }
-    >({
-      query: ({ subTestId, body }) => ({
-        url: `/api/admin/sub-tests/${subTestId}/schedule`,
-        method: 'PATCH',
-        body,
-      }),
-      invalidatesTags: (_r, _e, { testId }) => [{ type: 'Test', id: testId }],
-    }),
-
-    setSubTestPaid: b.mutation<AdminSubTest, { subTestId: number; paid: boolean; testId: number }>({
-      query: ({ subTestId, paid }) => ({
-        url: `/api/admin/sub-tests/${subTestId}/paid?paid=${paid}`,
-        method: 'PATCH',
-      }),
-      invalidatesTags: (_r, _e, { testId }) => [{ type: 'Test', id: testId }],
-    }),
-
     createSubTest: b.mutation<AdminSubTest, { testId: number; body: SubTestPayload }>({
       query: ({ testId, body }) => ({
         url: `/api/admin/tests/${testId}/sub-tests`,
@@ -229,8 +209,6 @@ export const {
   useDeleteTestMutation,
   useUpdatePricingMutation,
   useUpdateTestScheduleMutation,
-  useUpdateSubTestScheduleMutation,
-  useSetSubTestPaidMutation,
   useCreateSubTestMutation,
   useUpdateSubTestMutation,
   useDeleteSubTestMutation,

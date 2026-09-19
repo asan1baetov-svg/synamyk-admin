@@ -154,7 +154,7 @@ export function QuestionsPage() {
               }}
               disabled={list.length === 0}
             >
-              <Play size={14} /> Предпросмотр подтеста
+              <Play size={14} /> Предпросмотр раздела
             </Button>
             <Button onClick={openNew}>
               <Plus size={15} /> Добавить вопрос
@@ -318,7 +318,7 @@ export function QuestionsPage() {
       <Dialog
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
-        title="Предпросмотр подтеста"
+        title="Предпросмотр раздела"
         size="lg"
         footer={
           <div className="flex w-full items-center justify-between">

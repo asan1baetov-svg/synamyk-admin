@@ -98,7 +98,7 @@ export function UserDetail() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-neutral-50 text-left text-xs uppercase text-muted-foreground">
-                  <th className="px-4 py-2">Объект</th>
+                  <th className="px-4 py-2">Тест</th>
                   <th className="px-4 py-2">Выдан</th>
                   <th className="px-4 py-2">Истекает</th>
                   <th className="px-4 py-2">Статус</th>
@@ -108,14 +108,7 @@ export function UserDetail() {
               <tbody>
                 {grants.map(g => (
                   <tr key={g.id} className="border-b border-border last:border-0">
-                    <td className="px-4 py-2">
-                      {g.subTestId ? `${g.testTitle} — ${g.subTestTitle}` : g.testTitle}
-                      {g.subTestId && (
-                        <Badge tone="neutral" className="ml-2">
-                          подтест
-                        </Badge>
-                      )}
-                    </td>
+                    <td className="px-4 py-2">{g.testTitle}</td>
                     <td className="px-4 py-2">{formatDT(g.grantedAt)}</td>
                     <td className="px-4 py-2">{formatDT(g.expiresAt)}</td>
                     <td className="px-4 py-2">
@@ -150,8 +143,7 @@ export function UserDetail() {
           try {
             await revokeAccess({
               userId: revoke.userId,
-              testId: revoke.subTestId ? undefined : revoke.testId,
-              subTestId: revoke.subTestId ?? undefined,
+              testId: revoke.testId,
             }).unwrap()
             toast.success('Доступ отозван')
           } catch (err) {

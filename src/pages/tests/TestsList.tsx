@@ -72,7 +72,7 @@ export function TestsList() {
     <div>
       <PageHeader
         title="Тесты"
-        description="ОРТ-курсы: тесты → подтесты (уровни) → вопросы"
+        description="ОРТ-тесты: тест → разделы → вопросы и тексты"
         actions={
           <Button onClick={() => setCreateOpen(true)}>
             <Plus size={15} /> Создать тест
@@ -110,7 +110,7 @@ export function TestsList() {
         empty={
           <EmptyState
             title="Тестов пока нет"
-            description="Создайте первый тест, чтобы добавить подтесты и вопросы."
+            description="Создайте первый тест, чтобы добавить разделы и вопросы."
             action={
               <Button onClick={() => setCreateOpen(true)}>
                 <Plus size={15} /> Создать тест

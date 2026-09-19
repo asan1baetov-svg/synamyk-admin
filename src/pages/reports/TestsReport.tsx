@@ -90,7 +90,7 @@ export function TestsReport() {
                 <thead>
                   <tr className="border-b border-border bg-neutral-50 text-left">
                     <th className="px-4 py-3 text-xs font-semibold uppercase text-muted-foreground">
-                      Тест / подтест
+                      Тест / раздел
                     </th>
                     <th className="px-4 py-3">{th('attempts', 'Попытки')}</th>
                     <th className="px-4 py-3">{th('completed', 'Завершено')}</th>
